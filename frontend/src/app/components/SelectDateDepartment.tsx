@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Activity, Calendar, Building2, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router';
+import { doctorApi, clearAuthToken } from '../../services/api';
 
 export interface DateDepartmentSelection {
   date: string;
@@ -15,16 +16,37 @@ export function SelectDateDepartment({ onContinue }: SelectDateDepartmentProps) 
   const navigate = useNavigate();
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const departments = [
-    'Internal Medicine',
-    'Pediatrics',
-    'Obstetrics and Gynecology',
-    'General Surgery',
-    'Orthopedics',
-    'Ear, Nose and Throat (ENT)',
-    'Dermatology'
-  ];
+  // Fetch departments on component mount
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const data = await doctorApi.getAllDepartments();
+        setDepartments(data || []);
+      } catch (err: any) {
+        setError(err.message || 'Failed to load departments');
+        // Fallback to default departments
+        setDepartments([
+          { _id: '1', name: 'Internal Medicine' },
+          { _id: '2', name: 'Pediatrics' },
+          { _id: '3', name: 'Obstetrics and Gynecology' },
+          { _id: '4', name: 'General Surgery' },
+          { _id: '5', name: 'Orthopedics' },
+          { _id: '6', name: 'Ear, Nose and Throat (ENT)' },
+          { _id: '7', name: 'Dermatology' }
+        ]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDepartments();
+  }, []);
 
   const handleContinue = () => {
     if (selectedDate && selectedDepartment) {
@@ -36,6 +58,7 @@ export function SelectDateDepartment({ onContinue }: SelectDateDepartmentProps) 
   };
 
   const handleLogout = () => {
+    clearAuthToken();
     navigate('/signin');
   };
 
@@ -121,16 +144,22 @@ export function SelectDateDepartment({ onContinue }: SelectDateDepartmentProps) 
                 <Building2 className="w-5 h-5 text-[#1E88E5]" />
                 Select Department
               </label>
+              {error && (
+                <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-2 rounded-lg text-sm mb-3">
+                  Using default departments (API error: {error})
+                </div>
+              )}
               <div className="relative">
                 <select
                   value={selectedDepartment}
                   onChange={(e) => setSelectedDepartment(e.target.value)}
-                  className="w-full px-4 py-4 rounded-xl border-2 border-gray-300 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-[#1E88E5] focus:border-transparent transition-all cursor-pointer text-base font-medium appearance-none"
+                  disabled={loading}
+                  className="w-full px-4 py-4 rounded-xl border-2 border-gray-300 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-[#1E88E5] focus:border-transparent transition-all cursor-pointer text-base font-medium appearance-none disabled:opacity-50"
                 >
-                  <option value="">Choose a department</option>
+                  <option value="">{loading ? 'Loading departments...' : 'Choose a department'}</option>
                   {departments.map((dept) => (
-                    <option key={dept} value={dept}>
-                      {dept}
+                    <option key={dept._id || dept.name} value={dept.name}>
+                      {dept.name}
                     </option>
                   ))}
                 </select>

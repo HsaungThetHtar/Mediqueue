@@ -2,19 +2,32 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import svgPaths from '../../imports/svg-hiih1kv4yo';
 import { Eye, EyeOff } from 'lucide-react';
+import { authApi, saveAuthToken } from '../../services/api';
 
 export function SignIn() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [emailOrPhone, setEmailOrPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSignIn = (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle sign in logic here
-    console.log('Sign in:', { emailOrPhone, password });
-    // Navigate to the main app
-    navigate('/app');
+    setError('');
+    setLoading(true);
+
+    try {
+      const response = await authApi.login(emailOrPhone, password);
+      if (response.token) {
+        saveAuthToken(response.token);
+        navigate('/app');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Login failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDemoLogin = () => {
@@ -61,6 +74,13 @@ export function SignIn() {
           </h2>
 
           <form onSubmit={handleSignIn} className="space-y-5">
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+                {error}
+              </div>
+            )}
+
             {/* Email or Phone Field */}
             <div>
               <label className="block font-medium text-[17px] leading-[24px] text-[#364153] mb-2">
@@ -149,9 +169,10 @@ export function SignIn() {
             {/* Sign In Button */}
             <button
               type="submit"
-              className="w-full h-12 bg-[#1e88e5] text-white font-semibold text-[18px] leading-[24px] rounded-xl shadow-[0px_4px_6px_0px_rgba(0,0,0,0.1),0px_2px_4px_0px_rgba(0,0,0,0.1)] hover:bg-[#1976d2] transition-colors"
+              disabled={loading}
+              className="w-full h-12 bg-[#1e88e5] text-white font-semibold text-[18px] leading-[24px] rounded-xl shadow-[0px_4px_6px_0px_rgba(0,0,0,0.1),0px_2px_4px_0px_rgba(0,0,0,0.1)] hover:bg-[#1976d2] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Sign In
+              {loading ? 'Signing In...' : 'Sign In'}
             </button>
           </form>
 

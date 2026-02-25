@@ -1,18 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Activity, Check, Clock, Users, ChevronRight, ChevronLeft, LogOut, Zap } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { useNavigate } from 'react-router';
+import { doctorApi, clearAuthToken } from '../../services/api';
 
 export interface Doctor {
-  id: string;
+  _id?: string;
+  id?: string;
   name: string;
   department: string;
   availability: 'available' | 'nearlyFull' | 'full';
   workingHours: string;
   currentQueueServing: number;
   imageUrl: string;
-  currentQueue: number;
-  maxQueue: number;
+  currentQueue?: number;
+  maxQueue?: number;
+  specialization?: string;
 }
 
 interface SelectedDoctorProps {
@@ -23,173 +26,89 @@ interface SelectedDoctorProps {
 }
 
 export function SelectedDoctor({ onContinue, selectedDepartment, selectedDate, onBack }: SelectedDoctorProps) {
-  // Mock doctor data
-  const doctors: Doctor[] = [
-    // Internal Medicine
+  const navigate = useNavigate();
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [currentPage, setCurrentPage] = useState(0);
+  const itemsPerPage = 3;
+
+  // Fetch doctors from backend
+  useEffect(() => {
+    const fetchDoctors = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const data = await doctorApi.getDoctorsByDepartment(selectedDepartment);
+        // Transform backend data to match frontend interface
+        const transformedDoctors: Doctor[] = (data || []).map((doc: any) => ({
+          _id: doc._id,
+          id: doc._id,
+          name: doc.name,
+          specialization: doc.specialization,
+          department: selectedDepartment,
+          availability: doc.availability || 'available',
+          workingHours: doc.workingHours || '08.00-17.00',
+          currentQueueServing: doc.currentQueueServing || 0,
+          currentQueue: Math.floor(Math.random() * 20) + 1,
+          maxQueue: 30,
+          imageUrl: doc.imageUrl || 'https://via.placeholder.com/100',
+        }));
+        setDoctors(transformedDoctors.length > 0 ? transformedDoctors : getDefaultDoctors());
+      } catch (err: any) {
+        setError(err.message);
+        setDoctors(getDefaultDoctors());
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDoctors();
+  }, [selectedDepartment]);
+
+  const getDefaultDoctors = (): Doctor[] => [
     {
       id: '1',
       name: 'Dr. Sarah Johnson',
-      department: 'Internal Medicine',
+      department: selectedDepartment,
       availability: 'available',
       workingHours: '08.00-17.00',
       currentQueueServing: 10,
-      imageUrl: 'https://images.unsplash.com/photo-1706565029539-d09af5896340?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmZW1hbGUlMjBkb2N0b3IlMjBwb3J0cmFpdHxlbnwxfHx8fDE3NjgwNzY2NDd8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
       currentQueue: 5,
       maxQueue: 30,
+      imageUrl: 'https://images.unsplash.com/photo-1706565029539-d09af5896340?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=200',
     },
     {
       id: '2',
-      name: 'Dr. Michael Chen',
-      department: 'Internal Medicine',
-      availability: 'nearlyFull',
-      workingHours: '08.00-17.00',
-      currentQueueServing: 5,
-      imageUrl: 'https://images.unsplash.com/photo-1605504836193-e77d3d9ede8a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxhc2lhbiUyMGRvY3RvciUyMHBvcnRyYWl0fGVufDF8fHx8MTc2ODE0MTQ4NXww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-      currentQueue: 25,
-      maxQueue: 30,
-    },
-    // Pediatrics
-    {
-      id: '3',
-      name: 'Dr. Emily Davis',
-      department: 'Pediatrics',
+      name: 'Dr. Michael Chang',
+      department: selectedDepartment,
       availability: 'available',
-      workingHours: '08.00-17.00',
-      currentQueueServing: 1,
-      imageUrl: 'https://images.unsplash.com/photo-1706565029539-d09af5896340?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmZW1hbGUlMjBkb2N0b3IlMjBwb3J0cmFpdHxlbnwxfHx8fDE3NjgwNzY2NDd8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-      currentQueue: 8,
-      maxQueue: 30,
-    },
-    {
-      id: '4',
-      name: 'Dr. James Wilson',
-      department: 'Pediatrics',
-      availability: 'full',
-      workingHours: '08.00-17.00',
-      currentQueueServing: 0,
-      imageUrl: 'https://images.unsplash.com/photo-1615177393114-bd2917a4f74a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtYWxlJTIwZG9jdG9yJTIwcG9ydHJhaXR8ZW58MXx8fHwxNzY4MDQ3OTYxfDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-      currentQueue: 30,
-      maxQueue: 30,
-    },
-    // Obstetrics and Gynecology
-    {
-      id: '5',
-      name: 'Dr. Lisa Anderson',
-      department: 'Obstetrics and Gynecology',
-      availability: 'available',
-      workingHours: '08.00-17.00',
-      currentQueueServing: 5,
-      imageUrl: 'https://images.unsplash.com/photo-1706565029539-d09af5896340?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmZW1hbGUlMjBkb2N0b3IlMjBwb3J0cmFpdHxlbnwxfHx8fDE3NjgwNzY2NDd8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-      currentQueue: 12,
-      maxQueue: 30,
-    },
-    {
-      id: '6',
-      name: 'Dr. Maria Rodriguez',
-      department: 'Obstetrics and Gynecology',
-      availability: 'nearlyFull',
       workingHours: '08.00-17.00',
       currentQueueServing: 8,
-      imageUrl: 'https://images.unsplash.com/photo-1706565029539-d09af5896340?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmZW1hbGUlMjBkb2N0b3IlMjBwb3J0cmFpdHxlbnwxfHx8fDE3NjgwNzY2NDd8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-      currentQueue: 22,
-      maxQueue: 30,
-    },
-    // General Surgery
-    {
-      id: '7',
-      name: 'Dr. Robert Martinez',
-      department: 'General Surgery',
-      availability: 'available',
-      workingHours: '08.00-17.00',
-      currentQueueServing: 10,
-      imageUrl: 'https://images.unsplash.com/photo-1615177393114-bd2917a4f74a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtYWxlJTIwZG9jdG9yJTIwcG9ydHJhaXR8ZW58MXx8fHwxNzY4MDQ3OTYxfDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
       currentQueue: 7,
       maxQueue: 30,
+      imageUrl: 'https://images.unsplash.com/photo-1615177393114-bd2917a4f74a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=200',
     },
     {
-      id: '8',
-      name: 'Dr. David Thompson',
-      department: 'General Surgery',
+      id: '3',
+      name: 'Dr. Emily Watson',
+      department: selectedDepartment,
       availability: 'nearlyFull',
       workingHours: '08.00-17.00',
-      currentQueueServing: 6,
-      imageUrl: 'https://images.unsplash.com/photo-1615177393114-bd2917a4f74a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtYWxlJTIwZG9jdG9yJTIwcG9ydHJhaXR8ZW58MXx8fHwxNzY4MDQ3OTYxfDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-      currentQueue: 24,
+      currentQueueServing: 15,
+      currentQueue: 12,
       maxQueue: 30,
-    },
-    // Orthopedics
-    {
-      id: '9',
-      name: 'Dr. Jennifer Lee',
-      department: 'Orthopedics',
-      availability: 'available',
-      workingHours: '08.00-17.00',
-      currentQueueServing: 12,
-      imageUrl: 'https://images.unsplash.com/photo-1706565029539-d09af5896340?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmZW1hbGUlMjBkb2N0b3IlMjBwb3J0cmFpdHxlbnwxfHx8fDE3NjgwNzY2NDd8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-      currentQueue: 9,
-      maxQueue: 30,
-    },
-    {
-      id: '10',
-      name: 'Dr. Thomas Brown',
-      department: 'Orthopedics',
-      availability: 'full',
-      workingHours: '08.00-17.00',
-      currentQueueServing: 0,
-      imageUrl: 'https://images.unsplash.com/photo-1615177393114-bd2917a4f74a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtYWxlJTIwZG9jdG9yJTIwcG9ydHJhaXR8ZW58MXx8fHwxNzY4MDQ3OTYxfDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-      currentQueue: 30,
-      maxQueue: 30,
-    },
-    // Ear, Nose and Throat (ENT)
-    {
-      id: '11',
-      name: 'Dr. Amanda Clark',
-      department: 'Ear, Nose and Throat (ENT)',
-      availability: 'available',
-      workingHours: '08.00-17.00',
-      currentQueueServing: 11,
-      imageUrl: 'https://images.unsplash.com/photo-1706565029539-d09af5896340?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmZW1hbGUlMjBkb2N0b3IlMjBwb3J0cmFpdHxlbnwxfHx8fDE3NjgwNzY2NDd8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-      currentQueue: 10,
-      maxQueue: 30,
-    },
-    {
-      id: '12',
-      name: 'Dr. Steven Harris',
-      department: 'Ear, Nose and Throat (ENT)',
-      availability: 'available',
-      workingHours: '08.00-17.00',
-      currentQueueServing: 9,
-      imageUrl: 'https://images.unsplash.com/photo-1615177393114-bd2917a4f74a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtYWxlJTIwZG9jdG9yJTIwcG9ydHJhaXR8ZW58MXx8fHwxNzY4MDQ3OTYxfDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-      currentQueue: 11,
-      maxQueue: 30,
-    },
-    // Dermatology
-    {
-      id: '13',
-      name: 'Dr. Michelle Taylor',
-      department: 'Dermatology',
-      availability: 'available',
-      workingHours: '08.00-17.00',
-      currentQueueServing: 13,
-      imageUrl: 'https://images.unsplash.com/photo-1706565029539-d09af5896340?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmZW1hbGUlMjBkb2N0b3IlMjBwb3J0cmFpdHxlbnwxfHx8fDE3NjgwNzY2NDd8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-      currentQueue: 8,
-      maxQueue: 30,
-    },
-    {
-      id: '14',
-      name: 'Dr. Daniel Moore',
-      department: 'Dermatology',
-      availability: 'nearlyFull',
-      workingHours: '08.00-17.00',
-      currentQueueServing: 4,
-      imageUrl: 'https://images.unsplash.com/photo-1605504836193-e77d3d9ede8a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxhc2lhbiUyMGRvY3RvciUyMHBvcnRyYWl0fGVufDF8fHx8MTc2ODE0MTQ4NXww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-      currentQueue: 26,
-      maxQueue: 30,
+      imageUrl: 'https://images.unsplash.com/photo-1706565029539-d09af5896340?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=200',
     },
   ];
 
+  const handleLogout = () => {
+    clearAuthToken();
+    navigate('/signin');
+  };
+
   // Filter doctors by selected department
-  const filteredDoctors = doctors.filter(doc => doc.department === selectedDepartment);
+  const filteredDoctors = doctors;
 
   // Find the doctor with the fastest queue in the selected department
   const findFastestDoctor = () => {
@@ -257,11 +176,11 @@ export function SelectedDoctor({ onContinue, selectedDepartment, selectedDate, o
     }
   };
 
-  const navigate = useNavigate();
+  // const navigate = useNavigate();
 
-  const handleLogout = () => {
-    navigate('/signin');
-  };
+  // const handleLogout = () => {
+  //   navigate('/signin');
+  // };
 
   // Format the selected date to a readable format
   const formatDate = (dateString: string) => {

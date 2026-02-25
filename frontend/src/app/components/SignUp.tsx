@@ -1,11 +1,15 @@
 import { useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import svgPaths from '../../imports/svg-c3y431orpb';
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { authApi, saveAuthToken } from '../../services/api';
 
 export function SignUp() {
+  const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -20,10 +24,48 @@ export function SignUp() {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleCreateAccount = (e: React.FormEvent) => {
+  const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle sign up logic here
-    console.log('Create account:', formData);
+    setError('');
+
+    // Validate passwords match
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    // Validate password length
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    // Validate required fields
+    if (!formData.fullName || !formData.email || !formData.phone || !formData.dateOfBirth || !formData.password) {
+      setError('Please fill in all required fields');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await authApi.register(
+        formData.fullName,
+        formData.email,
+        formData.password,
+        formData.phone,
+        formData.dateOfBirth
+      );
+      
+      if (response.token) {
+        saveAuthToken(response.token);
+        navigate('/app');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Registration failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -72,6 +114,13 @@ export function SignUp() {
           </h2>
 
           <form onSubmit={handleCreateAccount} className="space-y-4">
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+                {error}
+              </div>
+            )}
+
             {/* Full Name */}
             <div>
               <label className="block font-medium text-[14px] leading-[14px] text-[#364153] mb-2">
@@ -347,9 +396,10 @@ export function SignUp() {
             {/* Create Account Button */}
             <button
               type="submit"
-              className="w-full h-12 bg-[#1e88e5] text-white font-semibold text-[14px] leading-[20px] rounded-[10px] shadow-[0px_4px_6px_0px_rgba(0,0,0,0.1),0px_2px_4px_0px_rgba(0,0,0,0.1)] hover:bg-[#1976d2] transition-colors mt-1"
+              disabled={loading}
+              className="w-full h-12 bg-[#1e88e5] text-white font-semibold text-[14px] leading-[20px] rounded-[10px] shadow-[0px_4px_6px_0px_rgba(0,0,0,0.1),0px_2px_4px_0px_rgba(0,0,0,0.1)] hover:bg-[#1976d2] transition-colors mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Create Account
+              {loading ? 'Creating Account...' : 'Create Account'}
             </button>
           </form>
         </div>
