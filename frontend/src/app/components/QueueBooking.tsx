@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Clock, Users, AlertCircle, Calendar, Building2, Stethoscope, Activity, ArrowLeft } from 'lucide-react';
-import { BookingData } from '../App';
+import { BookingData } from '../MainApp'; 
 import { Doctor } from './SelectedDoctor';
 import { ImageWithFallback } from './figma/ImageWithFallback';
+import { supabase } from '../../supabaseClient'; 
 
 interface QueueBookingProps {
   onConfirmBooking: (data: BookingData) => void;
@@ -17,15 +18,14 @@ type TimeSlot = 'morning' | 'afternoon';
 export function QueueBooking({ onConfirmBooking, selectedDoctor, onBackToSelection, selectedDate }: QueueBookingProps) {
   const [queueStatus, setQueueStatus] = useState<QueueStatus>(selectedDoctor.availability);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<TimeSlot>('morning');
+  const [isSubmitting, setIsSubmitting] = useState(false); 
 
-  // Use selected doctor's information
   const doctorInfo = {
     name: selectedDoctor.name,
     department: selectedDoctor.department,
     hospital: 'Central City Hospital',
   };
 
-  // Format the selected date to a readable format
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { 
@@ -35,6 +35,41 @@ export function QueueBooking({ onConfirmBooking, selectedDoctor, onBackToSelecti
       day: 'numeric' 
     });
   };
+
+  // --- UPDATED HANDLE CONFIRM FUNCTION ---
+  const handleConfirm = async () => {
+    setIsSubmitting(true); 
+
+    // 1. Generate the booking data
+    const queueNumber = queueStatus === 'available' ? 'A-102' : 'B-045';
+    const estimatedTime = queueStatus === 'available' ? '10:30 AM' : '2:15 PM';
+
+    const bookingData = {
+      queueNumber,
+      hospital: doctorInfo.hospital,
+      department: doctorInfo.department,
+      doctor: doctorInfo.name,
+      date: selectedDate,
+      estimatedTime,
+      currentlyServing: queueStatus === 'available' ? 'A-098' : 'B-020',
+    };
+
+    // 2. Save it to Supabase!
+    const { error } = await supabase
+      .from('bookings')
+      .insert([bookingData]);
+
+    setIsSubmitting(false); 
+
+    if (error) {
+      console.error('Error saving booking:', error);
+      alert('There was a problem booking your appointment. Please try again.');
+    } else {
+      // 3. If successful, move to the Booking Slip screen
+      onConfirmBooking(bookingData as BookingData);
+    }
+  };
+
 
   const formattedDate = formatDate(selectedDate);
 
@@ -82,35 +117,6 @@ export function QueueBooking({ onConfirmBooking, selectedDoctor, onBackToSelecti
       case 'full':
         return 'Full';
     }
-  };
-
-  const handleConfirm = () => {
-    if (queueStatus === 'full') return;
-
-    const now = new Date();
-    // Generate queue number based on doctor's current queue + 1
-    const nextQueueNumber = selectedDoctor.currentQueue + 1;
-    const queueNumber = `Q-${String(nextQueueNumber).padStart(3, '0')}`;
-    
-    // Calculate waiting time: (people ahead of you) * 15 minutes per patient
-    const estimatedWaitMinutes = selectedDoctor.currentQueue * 15;
-    const estimatedTime = new Date(now.getTime() + estimatedWaitMinutes * 60000);
-    
-    // Currently serving is the doctor's currentQueueServing number
-    const currentlyServing = `Q-${String(selectedDoctor.currentQueueServing).padStart(3, '0')}`;
-    
-    onConfirmBooking({
-      queueNumber,
-      hospital: doctorInfo.hospital,
-      department: doctorInfo.department,
-      doctor: doctorInfo.name,
-      date: selectedDate,
-      estimatedTime: estimatedTime.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      }),
-      currentlyServing: currentlyServing
-    });
   };
 
   return (
@@ -344,15 +350,10 @@ export function QueueBooking({ onConfirmBooking, selectedDoctor, onBackToSelecti
 
             {/* Confirm Button */}
             <button
-              onClick={handleConfirm}
-              disabled={queueStatus === 'full'}
-              className={`w-full py-5 rounded-xl font-semibold text-white text-base transition-colors shadow-sm ${
-                queueStatus === 'full'
-                  ? 'bg-gray-300 cursor-not-allowed'
-                  : 'bg-[#1E88E5] hover:bg-[#1976D2] active:bg-[#1565C0]'
-              }`}
-            >
-              {queueStatus === 'full' ? 'Queue Full' : 'Confirm Queue Booking'}
+                onClick={handleConfirm}
+                disabled={isSubmitting}
+                className="w-full mt-8 bg-[#1E88E5] text-white py-4 rounded-xl font-semibold text-lg hover:bg-[#1976D2] active:bg-[#1565C0] transition-colors shadow-md disabled:bg-gray-400">
+                {isSubmitting ? 'Confirming Appointment...' : 'Confirm Appointment'}
             </button>
 
             {/* Demo Controls */}
