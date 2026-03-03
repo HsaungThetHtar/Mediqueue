@@ -75,6 +75,49 @@ app.use('/api/doctors', doctorRoutes);
 
 const DEFAULT_PORT = parseInt(process.env.PORT, 10) || 5001;
 
+// Unified login endpoint
+const Doctor = require('./models/Doctor');
+const Patient = require('./models/patient');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+app.post('/api/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        if (!email || !password) {
+            return res.status(400).json({ msg: 'Email and password required' });
+        }
+        let userType, user, payload;
+        if (email.endsWith('@doctor.com')) {
+            userType = 'doctor';
+            user = await Doctor.findOne({ email });
+            if (!user) return res.status(400).json({ msg: 'Invalid doctor credentials' });
+            const isMatch = await bcrypt.compare(password, user.password);
+            if (!isMatch) return res.status(400).json({ msg: 'Invalid doctor credentials' });
+            payload = { doctor: { id: user.id, name: user.name, specialization: user.specialization } };
+        } else {
+            userType = 'patient';
+            user = await Patient.findOne({ email });
+            if (!user) return res.status(400).json({ msg: 'Invalid patient credentials' });
+            const isMatch = await bcrypt.compare(password, user.password);
+            if (!isMatch) return res.status(400).json({ msg: 'Invalid patient credentials' });
+            payload = { patient: { id: user.id, name: user.name, email: user.email } };
+        }
+        jwt.sign(
+            payload,
+            process.env.JWT_SECRET,
+            { expiresIn: '7d' },
+            (err, token) => {
+                if (err) throw err;
+                res.json({ token, userType, user });
+            }
+        );
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server error');
+    }
+});
+
 // Start server and automatically try next port if the desired one is in use
 const startServer = (port, attempts = 0) => {
     const server = app.listen(port)

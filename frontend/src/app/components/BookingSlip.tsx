@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Building2, Calendar, User, Clock, Activity, Home, X, QrCode } from 'lucide-react';
 import { BookingData } from '../App';
 import { QRCodeSVG } from 'qrcode.react';
+import { checkinBooking } from '../../services/api';
 
 interface BookingSlipProps {
   bookingData: BookingData;
@@ -14,16 +15,19 @@ export function BookingSlip({ bookingData, onCancelBooking, onBackToHome }: Book
   const [currentServing, setCurrentServing] = useState(bookingData.currentlyServing);
   const [waitingTime, setWaitingTime] = useState(0);
 
-  // Generate QR code data
-  const qrCodeData = JSON.stringify({
-    queueNumber: bookingData.queueNumber,
-    hospital: bookingData.hospital,
-    department: bookingData.department,
-    doctor: bookingData.doctor,
-    date: bookingData.date,
-    estimatedTime: bookingData.estimatedTime,
-    timestamp: new Date().toISOString(),
-  });
+  // Generate QR code data (bookingId for check-in)
+  const qrCodeData = JSON.stringify({ bookingId: bookingData.bookingId });
+  // Demo check-in button
+  const [checkinStatus, setCheckinStatus] = useState<string>('');
+  const handleCheckin = async () => {
+    try {
+      setCheckinStatus('Checking in...');
+      const res = await checkinBooking(bookingData.bookingId);
+      setCheckinStatus(res.msg || 'Check-in successful!');
+    } catch (err: any) {
+      setCheckinStatus(err.message || 'Check-in failed');
+    }
+  };
 
   // Simulate live queue updates
   useEffect(() => {
@@ -183,6 +187,15 @@ export function BookingSlip({ bookingData, onCancelBooking, onBackToHome }: Book
                       <p className="text-xs text-gray-600 text-center mt-4 max-w-xs">
                         Scan this QR code at the hospital registration desk for quick check-in
                       </p>
+                      <button
+                        className="mt-4 px-4 py-2 rounded-lg bg-[#1E88E5] text-white font-semibold hover:bg-blue-600"
+                        onClick={handleCheckin}
+                      >
+                        Demo Check-In
+                      </button>
+                      {checkinStatus && (
+                        <p className="text-xs text-green-600 mt-2">{checkinStatus}</p>
+                      )}
                     </div>
                   </div>
                 </div>

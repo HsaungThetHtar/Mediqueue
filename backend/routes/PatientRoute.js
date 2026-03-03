@@ -7,6 +7,34 @@ const Department = require('../models/Department');
 const Doctor = require('../models/Doctor');
 const QueueBooking = require('../models/QueueBooking');
 const auth = require('../middleware/auth');
+// ...existing code...
+
+// QR code check-in endpoint
+router.post('/checkin', async (req, res) => {
+  try {
+    const { bookingId } = req.body;
+    if (!bookingId) {
+      console.error('[checkin] Missing bookingId in request body:', req.body);
+      return res.status(400).json({ msg: 'Missing bookingId. Please scan a valid QR code.' });
+    }
+    const booking = await QueueBooking.findById(bookingId);
+    if (!booking) {
+      console.error('[checkin] Booking not found for bookingId:', bookingId);
+      return res.status(404).json({ msg: 'Booking not found. Please check your queue slip.' });
+    }
+    if (booking.status === 'IN_PROGRESS' || booking.status === 'COMPLETED') {
+      console.error('[checkin] Booking already checked in or completed:', bookingId, booking.status);
+      return res.status(400).json({ msg: 'Already checked in or completed. Please contact the registration desk if you need help.' });
+    }
+    booking.status = 'IN_PROGRESS';
+    await booking.save();
+    res.json({ msg: 'Check-in successful', queueNumber: booking.queueNumber, status: booking.status });
+  } catch (err) {
+    console.error('[checkin] Server error:', err.message);
+    res.status(500).json({ msg: 'Server error during check-in. Please try again or ask for help.' });
+  }
+});
+// ...existing code...
 
 router.post('/register', async (req, res) => {
   try {
@@ -116,7 +144,7 @@ router.get('/profile', auth, async (req, res) => {
 // Get all departments
 router.get('/departments', auth, async (req, res) => {
   try {
-    const departments = await Department.find({ isActive: true });
+    const departments = await Department.find({});
     res.json(departments);
   } catch (err) {
     console.error(err.message);
@@ -143,10 +171,9 @@ router.get('/departments/:departmentId/doctors', auth, async (req, res) => {
 router.post('/check-availability', auth, async (req, res) => {
   try {
     const { departmentId, doctorId, appointmentDate } = req.body;
-    
+    console.log('[check-availability] departmentId:', departmentId, 'doctorId:', doctorId, 'appointmentDate:', appointmentDate);
     const date = new Date(appointmentDate);
     date.setHours(0, 0, 0, 0);
-    
     const nextDay = new Date(date);
     nextDay.setDate(date.getDate() + 1);
 
@@ -189,11 +216,25 @@ router.post('/check-availability', auth, async (req, res) => {
 router.post('/book-queue', auth, async (req, res) => {
   try {
     const { departmentId, doctorId, session, appointmentDate } = req.body;
+    console.log('[book-queue] Incoming body:', req.body);
+
+    // Validate required fields
+    if (!departmentId || !doctorId || !session || !appointmentDate) {
+      console.error('[book-queue] Missing required field:', { departmentId, doctorId, session, appointmentDate });
+      return res.status(400).json({ msg: 'Missing required booking information.' });
+    }
+    if (!req.patient || !req.patient.id) {
+      console.error('[book-queue] Missing patient authentication:', req.patient);
+      return res.status(400).json({ msg: 'Authentication error. Please sign in again.' });
+    }
 
     // Validate session times
     const date = new Date(appointmentDate);
+    if (isNaN(date.getTime())) {
+      console.error('[book-queue] Invalid appointmentDate:', appointmentDate);
+      return res.status(400).json({ msg: 'Invalid appointment date.' });
+    }
     date.setHours(0, 0, 0, 0);
-    
     const nextDay = new Date(date);
     nextDay.setDate(date.getDate() + 1);
 
@@ -205,7 +246,8 @@ router.post('/book-queue', auth, async (req, res) => {
     });
 
     if (existingBooking) {
-      return res.status(400).json({ msg: 'You already have an active booking for this date' });
+      console.error('[book-queue] Duplicate booking for patient:', req.patient.id);
+      return res.status(400).json({ msg: 'You already have an active booking for this date.' });
     }
 
     // Get count of bookings for the selected session
@@ -216,7 +258,8 @@ router.post('/book-queue', auth, async (req, res) => {
     });
 
     if (sessionBookings >= 20) {
-      return res.status(400).json({ msg: 'No slots available for this session' });
+      console.error('[book-queue] Session full:', session, appointmentDate);
+      return res.status(400).json({ msg: 'No slots available for this session.' });
     }
 
     // Calculate queue number (1-20 for each session)
@@ -248,7 +291,7 @@ router.post('/book-queue', auth, async (req, res) => {
 
     res.json(booking);
   } catch (err) {
-    console.error(err.message);
+    console.error('[book-queue] Error:', err);
     res.status(500).send('Server error');
   }
 });

@@ -1,3 +1,7 @@
+// Check-in booking via QR code
+export async function checkinBooking(bookingId: string) {
+  return apiCall('/patients/checkin', 'POST', { bookingId });
+}
 // API configuration and helper functions
 const API_BASE_URL = 'http://localhost:5001/api';
 
@@ -19,6 +23,9 @@ async function apiCall(
   const token = getToken();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+    console.log('[apiCall] Sending Authorization header:', headers['Authorization']);
+  } else {
+    console.warn('[apiCall] No auth token found in localStorage');
   }
 
   const options: RequestInit = {
@@ -51,22 +58,41 @@ if (!response.ok) {
 export const authApi = {
   register: (name: string, email: string, password: string, phone: string, dateOfBirth: string) =>
     apiCall('/patients/register', 'POST', { name, email, password, phone, dateOfBirth }),
-  
+
   login: (email: string, password: string) =>
-    apiCall('/patients/login', 'POST', { email, password }),
-  
+     apiCall('/login', 'POST', { email, password }),
+
   getProfile: () =>
     apiCall('/patients/profile', 'GET'),
+
+  checkAvailability: (data: { departmentId: string, doctorId: string, appointmentDate: string }) =>
+    apiCall('/patients/check-availability', 'POST', data),
+
+  bookQueue: (data: { departmentId: string, doctorId: string, session: string, appointmentDate: string }) =>
+    apiCall('/patients/book-queue', 'POST', data),
 };
 
 // Doctor APIs
 export const doctorApi = {
+  register: (name: string, email: string, specialization: string, departmentId: string, qualifications: string, password: string) =>
+    apiCall('/doctors/register', 'POST', {
+      name,
+      email,
+      specialization,
+      departmentId,
+      qualifications: qualifications.split(',').map(q => q.trim()),
+      password
+    }),
+  login: (email: string, password: string) =>
+    apiCall('/doctors/login', 'POST', { email, password }),
   getAllDepartments: () =>
     apiCall('/doctors/departments/all', 'GET'),
-  
   getDoctorsByDepartment: (departmentName: string) =>
     apiCall(`/doctors/by-department/${departmentName}`, 'GET'),
-  
+  getDoctorProfile: () =>
+    apiCall('/doctors/profile', 'GET'),
+  getTodayQueue: () =>
+    apiCall('/doctors/today-queue', 'GET'),
   getDoctorById: (doctorId: string) =>
     apiCall(`/doctors/${doctorId}`, 'GET'),
 };

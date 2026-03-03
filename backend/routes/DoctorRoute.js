@@ -1,30 +1,171 @@
+
 const express = require('express');
 const router = express.Router();
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const Doctor = require('../models/Doctor');
 const Department = require('../models/Department');
 const QueueBooking = require('../models/QueueBooking');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const authDoctor = require('../middleware/authDoctor');
+
+// Get logged-in doctor's profile
+router.get('/profile', authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const doctor = await Doctor.findById(doctorId)
+      .select('-password')
+      .populate('department', 'name');
+    if (!doctor) return res.status(404).json({ msg: 'Doctor not found' });
+    res.json({
+      name: doctor.name,
+      email: doctor.email,
+      specialization: doctor.specialization,
+      department: doctor.department,
+      qualifications: doctor.qualifications,
+      imageUrl: doctor.imageUrl || '',
+      workingHours: doctor.workingHours || '',
+      isAvailable: doctor.isAvailable || false
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
+
+// Get today's queue for doctor
+router.get('/today-queue', authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor?.id;
+    console.log('[Doctor Dashboard] doctorId:', doctorId);
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+
+    // Find today's bookings for this doctor
+    const bookings = await QueueBooking.find({
+      doctor: doctorId,
+      appointmentDate: { $gte: today, $lt: tomorrow }
+    }).populate('patient', 'name email phone');
+    console.log('[Doctor Dashboard] bookings:', bookings);
+
+    res.json({ bookings });
+  } catch (err) {
+    console.error('[Doctor Dashboard] Error:', err);
+    res.status(500).send('Server error');
+  }
+});
+// Doctor login
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ msg: 'Email and password required' });
+    }
+    const doctor = await Doctor.findOne({ email });
+    if (!doctor) {
+      return res.status(400).json({ msg: 'Invalid credentials' });
+    }
+    if (!doctor.password) {
+      return res.status(400).json({ msg: 'No password set for this doctor' });
+    }
+    const isMatch = await bcrypt.compare(password, doctor.password);
+    if (!isMatch) {
+      return res.status(400).json({ msg: 'Invalid credentials' });
+    }
+    // Create JWT
+    const payload = {
+      doctor: {
+        id: doctor.id,
+        name: doctor.name,
+        specialization: doctor.specialization
+      }
+    };
+    jwt.sign(
+      payload,
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' },
+      (err, token) => {
+        if (err) throw err;
+        res.json({
+          token,
+          doctor: {
+            id: doctor.id,
+            name: doctor.name,
+            specialization: doctor.specialization
+          }
+        });
+      }
+    );
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
+
+// Update doctor profile
+router.put('/profile', authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const updateFields = (({ name, specialization, qualifications, imageUrl, workingHours }) => ({ name, specialization, qualifications, imageUrl, workingHours }))(req.body);
+    const doctor = await Doctor.findByIdAndUpdate(doctorId, updateFields, { new: true });
+    if (!doctor) return res.status(404).json({ msg: 'Doctor not found' });
+    res.json(doctor);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
+
+// Change password
+router.put('/change-password', authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const { oldPassword, newPassword } = req.body;
+    const doctor = await Doctor.findById(doctorId);
+    if (!doctor) return res.status(404).json({ msg: 'Doctor not found' });
+    const isMatch = await bcrypt.compare(oldPassword, doctor.password);
+    if (!isMatch) return res.status(400).json({ msg: 'Old password incorrect' });
+    const salt = await bcrypt.genSalt(10);
+    doctor.password = await bcrypt.hash(newPassword, salt);
+    await doctor.save();
+    res.json({ msg: 'Password changed successfully' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
+// ...existing code...
 
 // Register doctor
 router.post('/register', async (req, res) => {
   try {
-    const { name, specialization, departmentId, qualifications, password } = req.body;
+    const { name, email, specialization, departmentId, qualifications, password } = req.body;
 
     // Basic validation
-    if (!name || !specialization || !departmentId || !password) {
+    if (!name || !email || !specialization || !departmentId || !password) {
       return res.status(400).json({ msg: 'Please provide required fields' });
     }
+
+    // Check if doctor already exists
+    const existingDoctor = await Doctor.findOne({ email });
+    if (existingDoctor) {
+      return res.status(400).json({ msg: 'Doctor already exists' });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
     // Create doctor
     const doctor = new Doctor({
       name,
+      email,
       specialization,
       department: departmentId,
-      qualifications: qualifications || []
+      qualifications: qualifications ? (Array.isArray(qualifications) ? qualifications : qualifications.split(',').map(q => q.trim())) : [],
+      password: hashedPassword
     });
-
 
     await doctor.save();
 

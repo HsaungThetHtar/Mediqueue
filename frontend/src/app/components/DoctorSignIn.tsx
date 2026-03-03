@@ -1,14 +1,15 @@
+import { doctorApi, saveAuthToken } from '../../services/api';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import svgPaths from '../../imports/svg-hiih1kv4yo';
+import svgPaths from '../../imports/svg-c3y431orpb';
 import { Eye, EyeOff } from 'lucide-react';
-import { authApi, saveAuthToken } from '../../services/api';
 
-export function SignIn() {
+
+export function DoctorSignIn() {
   const navigate = useNavigate();
-  const [showPassword, setShowPassword] = useState(false);
-    const [email, setEmail] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -16,47 +17,17 @@ export function SignIn() {
     e.preventDefault();
     setError('');
     setLoading(true);
-
     try {
-        const response = await authApi.login(email, password);
+      const response = await doctorApi.login(email, password);
       if (response.token) {
         saveAuthToken(response.token);
-        localStorage.setItem('userType', response.userType);
-        if (response.userType === 'doctor') {
-          navigate('/doctor/dashboard');
-        } else {
-          navigate('/app');
-        }
+        navigate('/doctor/dashboard');
       }
     } catch (err: any) {
       setError(err.message || 'Login failed. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleDemoLogin = () => {
-    // Log in automatically with demo credentials
-    setError('');
-    setLoading(true);
-    authApi.login('demo@mediqueue.com', 'demo1234')
-      .then((response) => {
-        if (response.token) {
-          saveAuthToken(response.token);
-          localStorage.setItem('userType', response.userType);
-          if (response.userType === 'doctor') {
-            navigate('/doctor/dashboard');
-          } else {
-            navigate('/app');
-          }
-        }
-      })
-      .catch((err) => {
-        setError(err.message || 'Demo login failed. Please try again.');
-      })
-      .finally(() => {
-        setLoading(false);
-      });
   };
 
   return (
@@ -71,13 +42,13 @@ export function SignIn() {
         <div className="mb-8 text-center">
           <div className="flex justify-center mb-5">
             <div className="bg-[#1e88e5] rounded-full w-20 h-20 flex items-center justify-center">
-              <svg className="w-10 h-10" fill="none" viewBox="0 0 48 48">
+              <svg className="w-10 h-10" fill="none" viewBox="0 0 40 40">
                 <path 
-                  d={svgPaths.p1a422480} 
+                  d={svgPaths.p2e1c0dd8} 
                   stroke="white" 
                   strokeLinecap="round" 
                   strokeLinejoin="round" 
-                  strokeWidth="5" 
+                  strokeWidth="4.16568" 
                 />
               </svg>
             </div>
@@ -93,7 +64,7 @@ export function SignIn() {
         {/* Sign In Form Card */}
         <div className="bg-white rounded-2xl shadow-[0px_10px_15px_0px_rgba(0,0,0,0.1),0px_4px_6px_0px_rgba(0,0,0,0.1)] border border-[#f3f4f6] p-11 mb-8">
           <h2 className="font-semibold text-[30px] leading-[36px] text-[#101828] mb-8">
-            Sign In
+            Doctor Sign In
           </h2>
 
           <form onSubmit={handleSignIn} className="space-y-5">
@@ -113,14 +84,14 @@ export function SignIn() {
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5">
                   <svg className="w-full h-full" fill="none" viewBox="0 0 24 24">
                     <path 
-                      d={svgPaths.p67f12c8} 
+                      d={svgPaths.p38955500} 
                       stroke="#99A1AF" 
                       strokeLinecap="round" 
                       strokeLinejoin="round" 
                       strokeWidth="2" 
                     />
                     <path 
-                      d={svgPaths.p2c19cb00} 
+                      d={svgPaths.p3bc71800} 
                       stroke="#99A1AF" 
                       strokeLinecap="round" 
                       strokeLinejoin="round" 
@@ -179,16 +150,6 @@ export function SignIn() {
               </div>
             </div>
 
-            {/* Forgot Password */}
-            <div className="flex justify-end -mt-1">
-              <button
-                type="button"
-                className="font-medium text-[16px] leading-[22px] text-[#1e88e5] hover:underline"
-              >
-                Forgot Password?
-              </button>
-            </div>
-
             {/* Sign In Button */}
             <button
               type="submit"
@@ -202,36 +163,16 @@ export function SignIn() {
           {/* Divider */}
           <div className="relative my-7 border-t border-[#e5e7eb]">
             <p className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white px-4 font-normal text-[16px] leading-[22px] text-[#4a5565]">
-              Don't have an account?
+              Or
             </p>
           </div>
 
           {/* Create Account Button */}
-          <Link to="/signup">
+          <Link to="/doctor/signup">
             <button className="w-full h-12 bg-white text-[#1e88e5] font-semibold text-[18px] leading-[24px] rounded-xl border-2 border-[#1e88e5] hover:bg-[#e3f2fd] transition-colors">
-              Create New Account
+              Create Account
             </button>
           </Link>
-        </div>
-
-        {/* Demo Account Card */}
-        <div className="bg-gradient-to-r from-[#2E7D32] to-[#4CAF50] rounded-2xl shadow-[0px_10px_15px_0px_rgba(0,0,0,0.1),0px_4px_6px_0px_rgba(0,0,0,0.1)] border border-[#4CAF50] p-8 mb-8">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="text-white text-center md:text-left">
-              <h3 className="font-semibold text-[20px] leading-[26px] mb-1.5">
-                Try Demo Account
-              </h3>
-              <p className="font-normal text-[15px] leading-[20px] opacity-90">
-                Instantly explore MediQueue without creating an account
-              </p>
-            </div>
-            <button
-              onClick={handleDemoLogin}
-              className="w-full md:w-auto px-7 h-11 bg-white text-[#2E7D32] font-semibold text-[16px] leading-[24px] rounded-xl shadow-md hover:shadow-lg hover:scale-105 transition-all whitespace-nowrap"
-            >
-              Continue as Demo
-            </button>
-          </div>
         </div>
 
         {/* Footer */}

@@ -401,6 +401,11 @@ export function SignUp() {
             >
               {loading ? 'Creating Account...' : 'Create Account'}
             </button>
+            {/* Already have account link */}
+            <div className="text-center mt-4">
+              <span className="text-sm text-gray-600">Already have an account? </span>
+              <Link to="/signin" className="text-sm text-[#1e88e5] font-medium hover:underline">Sign In</Link>
+            </div>
           </form>
         </div>
 

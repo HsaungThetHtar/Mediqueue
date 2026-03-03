@@ -35,6 +35,15 @@ const doctorSchema = new mongoose.Schema({
   imageUrl: {
     type: String,
     default: ''
+  },
+  password: {
+    type: String,
+    required: false // Set to true if you want to require password for all doctors
+  },
+  email: {
+    type: String,
+    required: true,
+    unique: true
   }
 });
 
