@@ -32,23 +32,30 @@ router.get('/profile', authDoctor, async (req, res) => {
   }
 });
 
-// Get today's queue for doctor
-router.get('/today-queue', authDoctor, async (req, res) => {
+// Get queue for doctor for any date
+router.get('/queue', authDoctor, async (req, res) => {
   try {
     const doctorId = req.doctor?.id;
-    console.log('[Doctor Dashboard] doctorId:', doctorId);
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
-
-    // Find today's bookings for this doctor
+    let { date } = req.query;
+    let start, end;
+    if (date) {
+      // Parse date string (YYYY-MM-DD)
+      start = new Date(date);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(start);
+      end.setDate(start.getDate() + 1);
+    } else {
+      // Default to today
+      start = new Date();
+      start.setHours(0, 0, 0, 0);
+      end = new Date(start);
+      end.setDate(start.getDate() + 1);
+    }
+    // Find bookings for this doctor on selected date
     const bookings = await QueueBooking.find({
       doctor: doctorId,
-      appointmentDate: { $gte: today, $lt: tomorrow }
+      appointmentDate: { $gte: start, $lt: end }
     }).populate('patient', 'name email phone');
-    console.log('[Doctor Dashboard] bookings:', bookings);
-
     res.json({ bookings });
   } catch (err) {
     console.error('[Doctor Dashboard] Error:', err);
@@ -81,7 +88,7 @@ router.post('/login', async (req, res) => {
         specialization: doctor.specialization
       }
     };
-    jwt.sign(
+    const token = jwt.sign(
       payload,
       process.env.JWT_SECRET,
       { expiresIn: '7d' },
@@ -89,6 +96,7 @@ router.post('/login', async (req, res) => {
         if (err) throw err;
         res.json({
           token,
+          userType: "doctor",
           doctor: {
             id: doctor.id,
             name: doctor.name,

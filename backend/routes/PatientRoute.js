@@ -63,20 +63,25 @@ router.post('/register', async (req, res) => {
 
     // Create JWT
     const payload = {
-      patient: {
-        id: patient.id
-      }
+        id: patient.id,
+        role: "patient"
+
     };
 
-    jwt.sign(
+    const token = jwt.sign(
       payload,
       process.env.JWT_SECRET,
       { expiresIn: '7d' },
-      (err, token) => {
-        if (err) throw err;
-        res.json({ token });
-      }
     );
+        res.json({ 
+          token,
+          userType: "patient",
+          patient: {
+            id: patient.id,
+            name: patient.name,
+            email: patient.email
+          }
+        });
 
   } catch (err) {
     console.error(err.message);
@@ -102,27 +107,25 @@ router.post('/login', async (req, res) => {
 
     // Create JWT
     const payload = {
-      patient: {
-        id: patient.id
-      }
-    };
+      
+        id: patient.id,
+        role: "patient"
+      };
 
-    jwt.sign(
+    const token =jwt.sign(
       payload,
       process.env.JWT_SECRET,
       { expiresIn: '7d' },
-      (err, token) => {
-        if (err) throw err;
+    )
         res.json({
           token,
+          userType: "patient",
           patient: {
             id: patient.id,
             name: patient.name,
             email: patient.email
           }
         });
-      }
-    );
 
   } catch (err) {
     console.error(err.message);
@@ -133,7 +136,7 @@ router.post('/login', async (req, res) => {
 // Get patient profile
 router.get('/profile', auth, async (req, res) => {
   try {
-    const patient = await Patient.findById(req.patient.id).select('-password');
+    const patient = await Patient.findById(req.user.id).select('-password');
     res.json(patient);
   } catch (err) {
     console.error(err.message);
@@ -155,12 +158,12 @@ router.get('/departments', auth, async (req, res) => {
 // Get doctors by department
 router.get('/departments/:departmentId/doctors', auth, async (req, res) => {
   try {
-    const doctors = await Doctor.find({ 
+    // Only return doctors who are in the department and are available
+    const doctors = await Doctor.find({
       department: req.params.departmentId,
-      isAvailable: true 
-    });
+      isAvailable: true
+    }).select('name specialization department');
     res.json(doctors);
-    console.log(`Fetched ${doctors.length} doctors for department ${req.params.departmentId}:`, doctors);
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server error');
@@ -216,15 +219,25 @@ router.post('/check-availability', auth, async (req, res) => {
 router.post('/book-queue', auth, async (req, res) => {
   try {
     const { departmentId, doctorId, session, appointmentDate } = req.body;
-    console.log('[book-queue] Incoming body:', req.body);
+    const patientInfo = await Patient.findById(req.user.id).select('name');
+const departmentInfo = await Department.findById(departmentId).select('name');
+const doctorInfo = await Doctor.findById(doctorId).select('name');
+    console.log(`[book-queue] Incoming body:
+      Patient: ${patientInfo?.name}
+Department: ${departmentInfo?.name}
+Doctor: ${doctorInfo?.name}
+Session: ${session}
+Date: ${appointmentDate}`);
 
+      console.log("BODY:", req.body);
+console.log("USER:", req.user);
     // Validate required fields
     if (!departmentId || !doctorId || !session || !appointmentDate) {
       console.error('[book-queue] Missing required field:', { departmentId, doctorId, session, appointmentDate });
       return res.status(400).json({ msg: 'Missing required booking information.' });
     }
-    if (!req.patient || !req.patient.id) {
-      console.error('[book-queue] Missing patient authentication:', req.patient);
+    if (!req.user || !req.user.id) {
+      console.error('[book-queue] Missing patient authentication:', req.user);
       return res.status(400).json({ msg: 'Authentication error. Please sign in again.' });
     }
 
@@ -240,13 +253,13 @@ router.post('/book-queue', auth, async (req, res) => {
 
     // Check if patient already has a booking for this day
     const existingBooking = await QueueBooking.findOne({
-      patient: req.patient.id,
+      patient: req.user.id,
       appointmentDate: { $gte: date, $lt: nextDay },
       status: { $nin: ['COMPLETED', 'CANCELLED'] }
     });
 
     if (existingBooking) {
-      console.error('[book-queue] Duplicate booking for patient:', req.patient.id);
+      console.error('[book-queue] Duplicate booking for patient:', req.user.id);
       return res.status(400).json({ msg: 'You already have an active booking for this date.' });
     }
 
@@ -273,7 +286,7 @@ router.post('/book-queue', auth, async (req, res) => {
     // Create booking
     const booking = new QueueBooking({
       queueNumber,
-      patient: req.patient.id,
+      patient: req.user.id,
       department: departmentId,
       doctor: doctorId || null,
       session,
@@ -299,7 +312,7 @@ router.post('/book-queue', auth, async (req, res) => {
 // Get patient's bookings
 router.get('/my-bookings', auth, async (req, res) => {
   try {
-    const bookings = await QueueBooking.find({ patient: req.patient.id })
+    const bookings = await QueueBooking.find({ patient: req.user.id })
       .populate('department', 'name')
       .populate('doctor', 'name specialization')
       .sort({ appointmentDate: -1, createdAt: -1 });
@@ -316,7 +329,7 @@ router.get('/booking/:bookingId', auth, async (req, res) => {
   try {
     const booking = await QueueBooking.findOne({
       _id: req.params.bookingId,
-      patient: req.patient.id
+      patient: req.user.id
     })
     .populate('department', 'name description')
     .populate('doctor', 'name specialization qualifications')
@@ -338,7 +351,7 @@ router.put('/booking/:bookingId/cancel', auth, async (req, res) => {
   try {
     const booking = await QueueBooking.findOne({
       _id: req.params.bookingId,
-      patient: req.patient.id
+      patient: req.user.id
     });
 
     if (!booking) {
@@ -364,7 +377,7 @@ router.get('/queue-status/:bookingId', auth, async (req, res) => {
   try {
     const booking = await QueueBooking.findOne({
       _id: req.params.bookingId,
-      patient: req.patient.id
+      patient: req.user.id
     });
 
     if (!booking) {

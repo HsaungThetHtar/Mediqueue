@@ -5,7 +5,8 @@ import { doctorApi, clearAuthToken } from '../../services/api';
 
 export interface DateDepartmentSelection {
   date: string;
-  department: string;
+  departmentId: string;
+  departmentName: string;
 }
 
 interface SelectDateDepartmentProps {
@@ -15,7 +16,7 @@ interface SelectDateDepartmentProps {
 export function SelectDateDepartment({ onContinue }: SelectDateDepartmentProps) {
   const navigate = useNavigate();
   const [selectedDate, setSelectedDate] = useState('');
-  const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState('');
   const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -49,10 +50,12 @@ export function SelectDateDepartment({ onContinue }: SelectDateDepartmentProps) 
   }, []);
 
   const handleContinue = () => {
-    if (selectedDate && selectedDepartment) {
+    if (selectedDate && selectedDepartmentId) {
+      const dept = departments.find(d => d._id === selectedDepartmentId);
       onContinue({
         date: selectedDate,
-        department: selectedDepartment,
+        departmentId: selectedDepartmentId,
+        departmentName: dept ? dept.name : '',
       });
     }
   };
@@ -75,7 +78,7 @@ export function SelectDateDepartment({ onContinue }: SelectDateDepartmentProps) 
     return maxDate.toISOString().split('T')[0];
   };
 
-  const isFormValid = selectedDate && selectedDepartment;
+  const isFormValid = selectedDate && selectedDepartmentId;
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-6 md:px-8 md:py-10">
@@ -151,14 +154,14 @@ export function SelectDateDepartment({ onContinue }: SelectDateDepartmentProps) 
               )}
               <div className="relative">
                 <select
-                  value={selectedDepartment}
-                  onChange={(e) => setSelectedDepartment(e.target.value)}
+                  value={selectedDepartmentId}
+                  onChange={(e) => setSelectedDepartmentId(e.target.value)}
                   disabled={loading}
                   className="w-full px-4 py-4 rounded-xl border-2 border-gray-300 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-[#1E88E5] focus:border-transparent transition-all cursor-pointer text-base font-medium appearance-none disabled:opacity-50"
                 >
                   <option value="">{loading ? 'Loading departments...' : 'Choose a department'}</option>
                   {departments.map((dept) => (
-                    <option key={dept._id || dept.name} value={dept.name}>
+                    <option key={dept._id || dept.name} value={dept._id}>
                       {dept.name}
                     </option>
                   ))}
