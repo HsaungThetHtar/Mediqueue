@@ -1,4 +1,3 @@
-
 const express = require('express');
 const router = express.Router();
 const Doctor = require('../models/Doctor');
@@ -7,6 +6,26 @@ const QueueBooking = require('../models/QueueBooking');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const authDoctor = require('../middleware/authDoctor');
+// const QueueBooking = require("../models/QueueBooking");
+// Update checklist for a booking
+router.put("/booking/:bookingId/checklist", authDoctor, async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { checklist } = req.body;
+    const booking = await QueueBooking.findById(bookingId);
+    if (!booking) return res.status(404).json({ msg: "Booking not found" });
+    // Only allow doctor who owns the booking
+    if (booking.doctor.toString() !== req.doctor.id) {
+      return res.status(403).json({ msg: "Not authorized" });
+    }
+    booking.checklist = checklist;
+    await booking.save();
+    res.json({ msg: "Checklist updated" });
+  } catch (err) {
+    res.status(500).json({ msg: "Server error" });
+  }
+});
+
 
 // Get logged-in doctor's profile
 router.get('/profile', authDoctor, async (req, res) => {
@@ -271,16 +290,20 @@ router.get('/my-bookings', authDoctor, async (req, res) => {
   }
 });
 
-// Update booking status (CALL/IN_PROGRESS/COMPLETED/CANCELLED)
+// Update booking status (CALL/IN_PROGRESS/COMPLETED/CANCELLED) and add checklist when completed
 router.put('/booking/:bookingId/status', authDoctor, async (req, res) => {
   try {
     const doctorId = req.doctor.id;
-    const { status } = req.body;
+    const { status, checklist } = req.body;
 
     const booking = await QueueBooking.findOne({ _id: req.params.bookingId, doctor: doctorId });
     if (!booking) return res.status(404).json({ msg: 'Booking not found' });
 
     booking.status = status;
+    // If marking as completed, optionally set checklist (no longer required)
+    if (status === "completed" && checklist !== undefined) {
+      booking.checklist = checklist;
+    }
     await booking.save();
 
     res.json(booking);

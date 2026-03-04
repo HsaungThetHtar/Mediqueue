@@ -2,15 +2,9 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import api from '../api/axios';
+import { FiActivity } from "react-icons/fi";
 
 // SVG paths for icons (placeholder, update as needed)
-const svgPaths = {
-  p1a422480: "M24 4C13.0589 4 4 13.0589 4 24C4 34.9411 13.0589 44 24 44C34.9411 44 44 34.9411 44 24C44 13.0589 34.9411 4 24 4Z",
-  p67f12c8: "M12 4C6.47715 4 2 8.47715 2 14C2 19.5228 6.47715 24 12 24C17.5228 24 22 19.5228 22 14C22 8.47715 17.5228 4 12 4Z",
-  p2c19cb00: "M12 8C10.3431 8 9 9.34315 9 11C9 12.6569 10.3431 14 12 14C13.6569 14 15 12.6569 15 11C15 9.34315 13.6569 8 12 8Z",
-  p2dfab7c0: "M12 4C6.47715 4 2 8.47715 2 14C2 19.5228 6.47715 24 12 24C17.5228 24 22 19.5228 22 14C22 8.47715 17.5228 4 12 4Z",
-  p2c300c0: "M12 8C10.3431 8 9 9.34315 9 11C9 12.6569 10.3431 14 12 14C13.6569 14 15 12.6569 15 11C15 9.34315 13.6569 8 12 8Z"
-};
 
 export default function Login() {
   const navigate = useNavigate();
@@ -72,17 +66,7 @@ export default function Login() {
         {/* Header */}
         <div className="mb-6 text-center">
           <div className="flex justify-center mb-4">
-            <div className="bg-[#1e88e5] rounded-full w-20 h-20 flex items-center justify-center">
-              <svg className="w-10 h-10" fill="none" viewBox="0 0 40 40">
-                <path 
-                  d={svgPaths.p1a422480} 
-                  stroke="white" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                  strokeWidth="4.16568" 
-                />
-              </svg>
-            </div>
+            <FiActivity className="text-white bg-blue-600 p-4 rounded-full" size={120} />
           </div>
           <h1 className="font-bold text-[36px] leading-[40px] text-[#101828] mb-2">
             MediQueue

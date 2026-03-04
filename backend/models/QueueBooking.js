@@ -1,53 +1,45 @@
 const mongoose = require('mongoose');
 
-const queueBookingSchema = new mongoose.Schema({
-  queueNumber: {
-    type: Number,
-    required: true
-  },
+const QueueBookingSchema = new mongoose.Schema({
   patient: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Patient',
-    required: true
-  },
-  department: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Department',
-    required: true
+    ref: "Patient",
+    required: true,
   },
   doctor: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Doctor'
+    ref: "Doctor",
+    required: true,
   },
-  session: {
-    type: String,
-    enum: ['MORNING', 'AFTERNOON'],
-    required: true
-  },
-  status: {
-    type: String,
-    enum: ['WAITING', 'CALLED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'],
-    default: 'WAITING'
-  },
-  estimatedWaitTime: {
-    type: Number, // in minutes
-    default: 0
-  },
-  currentPosition: {
-    type: Number,
-    default: 0
-  },
-  bookingDate: {
-    type: Date,
-    default: Date.now
+  department: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Department",
+    required: true,
   },
   appointmentDate: {
     type: Date,
-    required: true
-  }
+    required: true,
+  },
+  session: {
+    type: String,
+    required: true,
+  },
+  queueNumber: {
+    type: Number,
+    required: true,
+  },
+  status: {
+    type: String,
+    enum: ["pending", "completed", "cancelled"],
+    default: "pending",
+  },
+  checklist: {
+    type: String,
+    default: "",
+  },
 });
 
 // Compound index to ensure unique queue numbers per day/session
-queueBookingSchema.index({ appointmentDate: 1, session: 1, queueNumber: 1 }, { unique: true });
+QueueBookingSchema.index({ appointmentDate: 1, session: 1, queueNumber: 1 }, { unique: true });
 
-module.exports = mongoose.model('QueueBooking', queueBookingSchema);
+module.exports = mongoose.model('QueueBooking', QueueBookingSchema);
