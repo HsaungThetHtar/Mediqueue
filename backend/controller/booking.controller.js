@@ -125,7 +125,7 @@ exports.getBookings = async function (req, res) {
     const list = bookings.map((b) => {
       const obj = b.toObject ? b.toObject() : b;
       if (b.doctor && b.status !== "canceled" && b.status !== "completed") {
-        const serving = b.doctor.currentQueueServing || 0;
+        const serving = servingToNumber(b.doctor.currentQueueServing);
         const parts = (b.queueNumber || "").split("-");
         const prefix = parts[0] || "Q";
         const myNum = parseInt(parts[1], 10) || 0;
@@ -144,13 +144,24 @@ exports.getBookings = async function (req, res) {
   }
 };
 
+// Normalize doctor.currentQueueServing to number (may be stored as string e.g. "A-002" from old code)
+function servingToNumber(val) {
+  if (val == null) return 0;
+  if (typeof val === "number" && !Number.isNaN(val)) return val;
+  const s = String(val).trim();
+  const parts = s.split("-");
+  if (parts.length >= 2) return parseInt(parts[parts.length - 1], 10) || 0;
+  const n = parseInt(s, 10);
+  return Number.isNaN(n) ? 0 : n;
+}
+
 // GET /bookings/:id/queue-status — สถานะคิวแบบ real-time (กำลังรับบริการหมายเลข, จำนวนคนข้างหน้า, เวลาประมาณ)
 exports.getQueueStatus = async function (req, res) {
   try {
     const booking = await Booking.findById(req.params.id).populate("doctor", "currentQueueServing");
     if (!booking) return res.status(404).json({ message: "Booking not found" });
 
-    const serving = (booking.doctor && booking.doctor.currentQueueServing) || 0;
+    const serving = servingToNumber(booking.doctor?.currentQueueServing);
     const parts = (booking.queueNumber || "").split("-");
     const prefix = parts[0] || "Q";
     const myNum = parseInt(parts[1], 10) || 0;

@@ -13,6 +13,7 @@ import {
 import { useOutletContext } from 'react-router';
 import { adminCheckIn, getCheckInsForDate } from '../../../../api/checkins';
 import { Pagination } from '../Pagination';
+import { useRealtimeEvent } from '../../../context/RealtimeContext';
 
 function todayISO() {
     const d = new Date();
@@ -40,9 +41,16 @@ export function CheckIns() {
     const [deptFilter, setDeptFilter] = useState('All Departments');
     const [doctorFilter, setDoctorFilter] = useState('All Doctors');
 
-    useEffect(() => {
+    const refreshCheckIns = () => {
         getCheckInsForDate(date).then(setCheckInsList).catch(() => setCheckInsList([]));
+    };
+
+    useEffect(() => {
+        refreshCheckIns();
     }, [date]);
+
+    useRealtimeEvent('checkin-update', refreshCheckIns);
+    useRealtimeEvent('queue-update', refreshCheckIns);
 
     useEffect(() => {
         setCurrentPage(1);

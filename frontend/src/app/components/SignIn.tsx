@@ -13,10 +13,9 @@ export function SignIn() {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const result = await import('../../api/auth').then(m => m.signIn(emailOrPhone, password));
-      // save token and user
-      import('../../api/auth').then(m => m.saveSession(result.token, result.user));
-      // navigate based on role
+      const auth = await import('../../api/auth');
+      const result = await auth.signIn(emailOrPhone, password);
+      auth.saveSession(result.token, result.user);
       switch (result.user.role) {
         case 'admin':
           navigate('/admin');

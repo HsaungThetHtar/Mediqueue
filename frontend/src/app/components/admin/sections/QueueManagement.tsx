@@ -220,26 +220,34 @@ function SessionTable({ title, icon, bgColor, queues, totalCount, getStatusBadge
     const [editModal, setEditModal] = useState<{ show: boolean, queue: any, newStatus: string }>({ show: false, queue: null, newStatus: '' });
     const [loading, setLoading] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
+    const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
     const handleAction = async (queueId: string, action: string, status?: string) => {
         setLoading(true);
         setActionError(null);
+        setActionSuccess(null);
         try {
             if (action === 'call') {
                 await callQueue(queueId);
+                setActionSuccess('เรียกคิวแล้ว — สถานะเปลี่ยนเป็นกำลังรับบริการ');
             } else if (action === 'skip') {
                 await skipQueue(queueId);
+                setActionSuccess('ข้ามคิวแล้ว');
             } else if (action === 'cancel') {
                 await cancelBooking(queueId);
+                setActionSuccess('ยกเลิกคิวแล้ว');
             } else if (action === 'complete') {
                 await completeQueue(queueId);
+                setActionSuccess('ทำรายการเสร็จแล้ว');
             } else if (action === 'update' && status) {
                 await updateQueueStatus(queueId, status);
+                setActionSuccess('อัปเดตสถานะแล้ว');
             }
 
             refresh();
             setCancelModal({ show: false, queue: null });
             setEditModal({ show: false, queue: null, newStatus: '' });
+            setTimeout(() => setActionSuccess(null), 3000);
         } catch (err: any) {
             console.error(`Failed to ${action} queue:`, err);
             setActionError(err?.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่');
@@ -250,6 +258,17 @@ function SessionTable({ title, icon, bgColor, queues, totalCount, getStatusBadge
 
     return (
         <div className="w-full min-w-[1000px]">
+            {actionSuccess && (
+                <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl text-green-800 text-sm font-medium flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5 shrink-0 text-green-600" />
+                    {actionSuccess}
+                </div>
+            )}
+            {actionError && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-medium">
+                    {actionError}
+                </div>
+            )}
             <div className={`${bgColor} px-8 py-4 flex items-center justify-between border-y border-gray-100`}>
                 <div className="flex items-center gap-3">
                     {icon}

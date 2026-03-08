@@ -21,6 +21,7 @@ const DEPARTMENTS = [
   "Dermatology",
 ];
 
+// หมอ 10 คน — แต่ละคนมีบัญชี users (doctor1@ … doctor10@) ผูกผ่าน doctors.userId
 const doctors = [
   { name: "Dr. Somchai Jaidee", department: "Internal Medicine", imageUrl: "https://randomuser.me/api/portraits/men/32.jpg" },
   { name: "Dr. Wanida Sriwong", department: "Internal Medicine", imageUrl: "https://randomuser.me/api/portraits/women/44.jpg" },
@@ -32,14 +33,20 @@ const doctors = [
   { name: "Dr. Kannika Thongdee", department: "Pediatrics", imageUrl: "https://randomuser.me/api/portraits/women/12.jpg" },
   { name: "Dr. Anan Sukasem", department: "General Surgery", imageUrl: "https://randomuser.me/api/portraits/men/41.jpg" },
   { name: "Dr. Benjawan Mani", department: "Ear, Nose and Throat (ENT)", imageUrl: "https://randomuser.me/api/portraits/women/33.jpg" },
-  { name: "Dr. Chaiya Phon", department: "Dermatology", imageUrl: "https://randomuser.me/api/portraits/men/15.jpg" },
 ];
 
+// แอดมิน + บัญชีล็อกอินของหมอทุกคน (แต่ละหมอมีอีเมลของตัวเอง)
 const staffUsers = [
   { fullName: "Admin MediQueue", email: "admin@mediqueue.com", password: "password123", role: "admin" },
-  { fullName: "Dr. Somchai Jaidee", email: "doctor@mediqueue.com", password: "password123", role: "doctor" },
+  ...doctors.map((d, i) => ({
+    fullName: d.name,
+    email: `doctor${i + 1}@mediqueue.com`,
+    password: "password123",
+    role: "doctor",
+  })),
 ];
 
+// ผู้ป่วย 20 คน — ใช้ใน bookings.patientId, notifications.userId, checkins.patientId
 const patientUsers = [
   { fullName: "สมชาย ใจดี", email: "somchai.p@email.com", password: "password123", phone: "0812345678", dateOfBirth: "1985-03-15", gender: "male", identificationNumber: "1100700123456" },
   { fullName: "วิชัย รัตนา", email: "wichai.r@email.com", password: "password123", phone: "0823456789", dateOfBirth: "1990-07-22", gender: "male", identificationNumber: "1100700987654" },
@@ -51,6 +58,16 @@ const patientUsers = [
   { fullName: "รัตนา พิมพ์จันทร์", email: "rattana.p@email.com", password: "password123", phone: "0889012345", dateOfBirth: "1980-04-25", gender: "female", identificationNumber: "3100800345678" },
   { fullName: "อนุชา สุขเสมอ", email: "anucha.s@email.com", password: "password123", phone: "0890123456", dateOfBirth: "1987-08-14", gender: "male", identificationNumber: "1100700678901" },
   { fullName: "เพ็ญศรี แสงทอง", email: "pensri.s@email.com", password: "password123", phone: "0901234567", dateOfBirth: "1995-02-28", gender: "female", identificationNumber: "3100800890123" },
+  { fullName: "วิมล เก่งงาน", email: "wimon.k@email.com", password: "password123", phone: "0912345678", dateOfBirth: "1983-06-10", gender: "female", identificationNumber: "3100800111222" },
+  { fullName: "สมศักดิ์ ใจมั่น", email: "somsak.j@email.com", password: "password123", phone: "0923456789", dateOfBirth: "1979-09-20", gender: "male", identificationNumber: "1100700333444" },
+  { fullName: "ดวงใจ สุขสันต์", email: "duangjai.s@email.com", password: "password123", phone: "0934567890", dateOfBirth: "1991-01-05", gender: "female", identificationNumber: "3100800555666" },
+  { fullName: "ธนพล รักเรียน", email: "thanapon.r@email.com", password: "password123", phone: "0945678901", dateOfBirth: "1986-11-12", gender: "male", identificationNumber: "1100700777888" },
+  { fullName: "ศิริพร ดีมาก", email: "siriporn.d@email.com", password: "password123", phone: "0956789012", dateOfBirth: "1984-04-18", gender: "female", identificationNumber: "3100800999000" },
+  { fullName: "ณัฐพล เก่งกาจ", email: "nattapon.k@email.com", password: "password123", phone: "0967890123", dateOfBirth: "1993-07-25", gender: "male", identificationNumber: "1100700122334" },
+  { fullName: "พัชรี นุ่มนวล", email: "patcharee.n@email.com", password: "password123", phone: "0978901234", dateOfBirth: "1989-02-14", gender: "female", identificationNumber: "3100800344556" },
+  { fullName: "จักรพงษ์ สดใส", email: "jakkrapong.s@email.com", password: "password123", phone: "0989012345", dateOfBirth: "1981-08-30", gender: "male", identificationNumber: "1100700566778" },
+  { fullName: "อรุณี ใจเย็น", email: "arunee.j@email.com", password: "password123", phone: "0990123456", dateOfBirth: "1994-12-08", gender: "female", identificationNumber: "3100800788990" },
+  { fullName: "สุรชัย ขยัน", email: "surachai.k@email.com", password: "password123", phone: "0901234568", dateOfBirth: "1977-05-22", gender: "male", identificationNumber: "1100700900112" },
 ];
 
 function toDateStr(d) {
@@ -79,6 +96,7 @@ function estimatedTimeForSlot(slotIndex, timeSlot) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+// Seed: หมอ 10 คน, ผู้ป่วย 20 คน — departments → doctors (departmentId), users (admin + doctor1..10 + patient1..20) → doctors.userId, bookings (doctor, patientId, date, status) → notifications/checkins
 async function seed() {
   try {
     await mongoose.connect(process.env.MONGODB_URI);
@@ -138,11 +156,16 @@ async function seed() {
     }
     console.log(`Inserted ${insertedUsers.length} users.`);
 
-    const doctorUser = insertedUsers.find((u) => u.role === "doctor");
-    if (doctorUser && insertedDoctors[0]) {
-      await Doctor.findByIdAndUpdate(insertedDoctors[0]._id, { userId: doctorUser._id });
-      console.log(`Linked doctor user to ${insertedDoctors[0].name}`);
+    // ความสัมพันธ์ doctors ↔ users: แต่ละหมอผูกกับบัญชีล็อกอินของตัวเอง (insertedUsers[0]=admin, [1]=หมอคนที่1, ...)
+    let linked = 0;
+    for (let i = 0; i < insertedDoctors.length; i++) {
+      const doctorUser = insertedUsers[1 + i]; // staffUsers[0]=admin, [1..]=doctor1, doctor2, ...
+      if (doctorUser && doctorUser.role === "doctor") {
+        await Doctor.findByIdAndUpdate(insertedDoctors[i]._id, { userId: doctorUser._id });
+        linked++;
+      }
     }
+    console.log(`Linked ${linked} doctor accounts (doctors.userId): doctor1@mediqueue.com … doctor${insertedDoctors.length}@mediqueue.com`);
 
     const patients = insertedUsers.filter((u) => u.role === "patient");
     // 4 วัน: เมื่อวาน, วันนี้, พรุ่งนี้, มะรืนนี้ — ข้อมูลจริง ครบทุกขั้นตอนทุกสถานะ
@@ -248,10 +271,11 @@ async function seed() {
     await CheckIn.insertMany(checkInsPayload);
     console.log(`Inserted ${checkInsPayload.length} check-ins.`);
 
-    console.log("\n--- Login (ระบบจริง) ---");
+    console.log("\n--- สรุป: หมอ " + insertedDoctors.length + " คน, ผู้ป่วย " + patients.length + " คน, ข้อมูลเชื่อมโยงกัน (departments↔doctors, users↔doctors.userId, bookings↔patients/doctors) ---");
+    console.log("--- Login (ระบบจริง) ---");
     staffUsers.forEach((u) => console.log(`[${u.role}] ${u.email} / ${u.password}`));
-    console.log("[patient] somchai.p@email.com / password123 (และผู้ป่วยอื่นๆ ในรายการ)");
-    console.log("\n--- 4 วัน: เมื่อวาน / วันนี้ / พรุ่งนี้ / มะรืนนี้ — ครบทุกสถานะ (waiting, confirmed, checked-in, in-progress, completed, canceled) ---");
+    console.log("[patient] 20 บัญชี patient1..20 (somchai.p@email.com, wichai.r@email.com, …) / password123");
+    console.log("--- 4 วัน: เมื่อวาน / วันนี้ / พรุ่งนี้ / มะรืนนี้ — ครบทุกสถานะ ---");
     console.log("Seed completed successfully.");
     process.exit(0);
   } catch (err) {

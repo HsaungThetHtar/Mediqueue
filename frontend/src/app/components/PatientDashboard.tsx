@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router';
-import { Calendar, Clock, MapPin, User, Plus, Eye, X, AlertCircle, CheckCircle, Clock3, Building2, LogOut } from 'lucide-react';
+import { Calendar, Clock, MapPin, User, Plus, Eye, X, AlertCircle, CheckCircle, Clock3, Building2, LogOut, Bell } from 'lucide-react';
 import { getSession, clearSession } from '../../api/auth';
 import { getDepartmentName } from '../../utils/department';
+import { useRealtimeEvent } from '../context/RealtimeContext';
 
 interface Booking {
   id: string;
@@ -22,49 +23,65 @@ export function PatientDashboard({ }: PatientDashboardProps) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [patientName, setPatientName] = useState('');
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const navigate = useNavigate();
 
-  // fetch bookings on mount
+  const loadBookings = useCallback(async () => {
+    try {
+      const user = getSession();
+      if (!user) {
+        clearSession();
+        navigate('/signin');
+        return;
+      }
+      setPatientName(user.fullName);
+      const data = await import('../../api/bookings').then(m => m.getMyBookings(user.id));
+      const statusMap: Record<string, Booking['status']> = {
+        waiting: 'upcoming',
+        confirmed: 'upcoming',
+        'checked-in': 'checked-in',
+        'in-progress': 'in-progress',
+        completed: 'completed',
+        canceled: 'cancelled',
+        cancelled: 'cancelled',
+      };
+      const ui: Booking[] = data.map(b => ({
+        id: b._id,
+        queueNumber: b.queueNumber,
+        hospital: b.hospital,
+        department: getDepartmentName((b as any).department),
+        doctor: b.doctorName,
+        date: b.date,
+        time: b.timeSlot === 'morning' ? 'Morning' : 'Afternoon',
+        status: statusMap[b.status] || 'upcoming',
+        estimatedWaitTime: (b as any).queueStatus?.estimatedWaitMinutes ?? 0,
+      }));
+      setBookings(ui);
+    } catch (err) {
+      console.error('failed load bookings', err);
+    }
+  }, [navigate]);
 
   useEffect(() => {
-    const load = async () => {
+    loadBookings();
+  }, [loadBookings]);
+
+  useRealtimeEvent('booking-update', loadBookings);
+  useRealtimeEvent('queue-update', loadBookings);
+
+  // fetch unread notification count for red badge
+  useEffect(() => {
+    const loadUnread = async () => {
       try {
-        const user = await getSession();
-        if (!user) {
-          clearSession();
-          navigate('/signin');
-          return;
-        }
-        setPatientName(user.fullName);
-        const data = await import('../../api/bookings').then(m => m.getMyBookings(user.id));
-        // convert API data to UI shape
-        const statusMap: Record<string, Booking['status']> = {
-          waiting: 'upcoming',
-          confirmed: 'upcoming',
-          'checked-in': 'checked-in',
-          'in-progress': 'in-progress',
-          completed: 'completed',
-          canceled: 'cancelled',
-          cancelled: 'cancelled',
-        };
-        const ui: Booking[] = data.map(b => ({
-          id: b._id,
-          queueNumber: b.queueNumber,
-          hospital: b.hospital,
-          department: getDepartmentName((b as any).department),
-          doctor: b.doctorName,
-          date: b.date,
-          time: b.timeSlot === 'morning' ? 'Morning' : 'Afternoon',
-          status: statusMap[b.status] || 'upcoming',
-          estimatedWaitTime: (b as any).queueStatus?.estimatedWaitMinutes ?? 0,
-        }));
-        setBookings(ui);
-      } catch (err) {
-        console.error('failed load bookings', err);
+        const list = await import('../../api/notifications').then(m => m.getNotifications());
+        const unread = (list || []).filter((n: { isRead?: boolean }) => !n.isRead).length;
+        setUnreadNotificationCount(unread);
+      } catch {
+        // ignore (e.g. not logged in or API error)
       }
     };
-    load();
-  }, [navigate]);
+    loadUnread();
+  }, []);
 
   const getStatusBadge = (status: Booking['status']) => {
     const styles = {
@@ -125,6 +142,23 @@ export function PatientDashboard({ }: PatientDashboardProps) {
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 truncate">Dashboard</h1>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
                 <p className="text-gray-600 text-sm sm:text-base truncate">Welcome back, {patientName || '—'}</p>
+                <Link
+                  to="/notifications"
+                  className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1 shrink-0"
+                >
+                  <span className="relative inline-flex">
+                    <Bell className="w-4 h-4 shrink-0" />
+                    {unreadNotificationCount > 0 && (
+                      <span
+                        className="absolute -top-2.5 -right-2.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full"
+                        aria-label={`${unreadNotificationCount} unread`}
+                      >
+                        {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                      </span>
+                    )}
+                  </span>
+                  Notifications
+                </Link>
                 <Link
                   to="/settings"
                   className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1 shrink-0"

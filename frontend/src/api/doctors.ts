@@ -30,6 +30,12 @@ export async function getDoctorsByUserId(userId: string): Promise<Doctor[]> {
   return api.get<Doctor[]>(`/doctors${query}`);
 }
 
+/** คิวของหมอที่ล็อกอิน (ใช้ใน Doctor Dashboard) — ต้องส่ง token */
+export async function getMyQueues(date: string): Promise<any[]> {
+  const query = `?date=${encodeURIComponent(date)}`;
+  return api.get<any[]>(`/doctors/me/queues${query}`);
+}
+
 export async function updatePatientStatus(
   doctorId: string,
   bookingId: string,
@@ -51,13 +57,23 @@ export async function createDoctor(data: {
   departmentId: string;
   workingHours?: string;
   imageUrl?: string;
+  email?: string;
+  password?: string;
 }): Promise<DoctorWithDateCount> {
   return api.post<DoctorWithDateCount>("/doctors", data);
 }
 
 export async function updateDoctor(
   id: string,
-  data: { name?: string; departmentId?: string; workingHours?: string; imageUrl?: string }
+  data: {
+    name?: string;
+    departmentId?: string;
+    workingHours?: string;
+    imageUrl?: string;
+    email?: string;
+    password?: string;
+    unlinkUser?: boolean;
+  }
 ): Promise<DoctorWithDateCount> {
   return api.patch<DoctorWithDateCount>(`/doctors/${id}`, data);
 }

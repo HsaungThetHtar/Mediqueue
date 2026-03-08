@@ -17,6 +17,8 @@ const bookingSchema = new mongoose.Schema({
     enum: ["waiting", "checked-in", "confirmed", "in-progress", "completed", "canceled"],
     default: "waiting",
   },
+  /** Set when status is set to in-progress (queue called); used for auto-skip after 10 min */
+  calledAt: { type: Date },
   doctorNotes: { type: String, default: "" },
   createdAt: { type: Date, default: Date.now },
 });

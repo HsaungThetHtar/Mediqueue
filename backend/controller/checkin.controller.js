@@ -37,7 +37,7 @@ exports.createCheckIn = async function (req, res) {
     await Booking.findByIdAndUpdate(bookingId, { status: "checked-in" });
 
     // Create notification
-    await Notification.create({
+    const notifDoc = await Notification.create({
       userId: patientId,
       title: "Check-in Confirmed",
       message: `You have successfully checked in for your appointment with ${booking.doctorName}`,
@@ -47,6 +47,10 @@ exports.createCheckIn = async function (req, res) {
 
     const io = req.app.get("io");
     io.emit("checkin-update", { bookingId, status: "checked-in" });
+    io.emit("notification", {
+      userId: String(patientId),
+      notification: { _id: notifDoc._id, title: notifDoc.title, message: notifDoc.message, type: "status", relatedBookingId: bookingId, isRead: false, createdAt: notifDoc.createdAt },
+    });
 
     res.status(201).json(checkIn);
   } catch (err) {

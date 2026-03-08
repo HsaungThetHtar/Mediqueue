@@ -48,12 +48,16 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 3001;
 
+const { startAutoSkipJob } = require("./jobs/autoSkipQueue");
+
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => {
     console.log("Connected to MongoDB");
     server.listen(PORT, () => {
       console.log("Server running on port", PORT);
+      startAutoSkipJob(io);
+      console.log("Auto-skip queue job started (every 1 min, skips in-progress > 10 min)");
     });
   })
   .catch((err) => {

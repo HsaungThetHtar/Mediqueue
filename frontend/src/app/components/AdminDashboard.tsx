@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Outlet, useLocation } from 'react-router';
-import { io } from 'socket.io-client';
 import { Users, Phone, SkipForward, CheckCircle } from 'lucide-react';
-import { BASE_URL } from '../../api/client';
 import { clearSession, getSession } from '../../api/auth';
+import { useRealtimeEvent } from '../context/RealtimeContext';
 import { getQueues, callQueue, skipQueue, completeQueue } from '../../api/queues';
 import { getDepartments } from '../../api/departments';
 import { getDepartmentName } from '../../utils/department';
@@ -119,11 +118,10 @@ export function AdminDashboard() {
       setUserEmail(session.email);
       setUserName(session.fullName);
     }
-
-    const socket = io(BASE_URL);
-    socket.on('queue-update', refresh);
-    return () => { socket.disconnect(); };
   }, []);
+
+  useRealtimeEvent('queue-update', () => refresh());
+  useRealtimeEvent('checkin-update', () => refresh());
 
   // Close sidebar on navigation
   useEffect(() => {
@@ -168,9 +166,33 @@ export function AdminDashboard() {
     return matchDept && matchStatus && matchDoctor;
   });
 
-  const handleCallQueue = async (id: string) => { await callQueue(id); refresh(); setSelectedQueue(null); };
-  const handleSkipQueue = async (id: string) => { await skipQueue(id); refresh(); setSelectedQueue(null); };
-  const handleCompleteQueue = async (id: string) => { await completeQueue(id); refresh(); setSelectedQueue(null); };
+  const handleCallQueue = async (id: string) => {
+    try {
+      await callQueue(id);
+      refresh();
+      setSelectedQueue(null);
+    } catch (err: any) {
+      alert(err?.message || 'เรียกคิวไม่สำเร็จ กรุณาลองใหม่');
+    }
+  };
+  const handleSkipQueue = async (id: string) => {
+    try {
+      await skipQueue(id);
+      refresh();
+      setSelectedQueue(null);
+    } catch (err: any) {
+      alert(err?.message || 'ข้ามคิวไม่สำเร็จ กรุณาลองใหม่');
+    }
+  };
+  const handleCompleteQueue = async (id: string) => {
+    try {
+      await completeQueue(id);
+      refresh();
+      setSelectedQueue(null);
+    } catch (err: any) {
+      alert(err?.message || 'ทำรายการไม่สำเร็จ กรุณาลองใหม่');
+    }
+  };
 
   const contextValues = {
     queues,
@@ -239,10 +261,11 @@ export function AdminDashboard() {
                     <div className="text-lg font-bold">{selectedQueue.patientName} ({selectedQueue.queueNumber})</div>
                   </div>
                 </div>
+                <p className="text-xs text-gray-500">Call Next = เรียกคนไข้เข้าห้อง (สถานะ → กำลังรับบริการ) · Skip = ข้ามคิว · Complete = จบการรับบริการ</p>
                 <div className="grid grid-cols-2 gap-4">
-                  <button onClick={() => handleCallQueue(selectedQueue.id)} className="p-4 bg-purple-50 text-purple-700 rounded-xl font-bold flex flex-col items-center gap-2"><Phone />Call Next</button>
-                  <button onClick={() => handleSkipQueue(selectedQueue.id)} className="p-4 bg-orange-50 text-orange-700 rounded-xl font-bold flex flex-col items-center gap-2"><SkipForward />Skip</button>
-                  <button onClick={() => handleCompleteQueue(selectedQueue.id)} className="p-4 bg-green-50 text-green-700 rounded-xl font-bold flex flex-col items-center gap-2 col-span-2"><CheckCircle />Complete Session</button>
+                  <button onClick={() => handleCallQueue(selectedQueue.id)} className="p-4 bg-purple-50 text-purple-700 rounded-xl font-bold flex flex-col items-center gap-2 hover:bg-purple-100 transition-colors"><Phone />Call Next</button>
+                  <button onClick={() => handleSkipQueue(selectedQueue.id)} className="p-4 bg-orange-50 text-orange-700 rounded-xl font-bold flex flex-col items-center gap-2 hover:bg-orange-100 transition-colors"><SkipForward />Skip</button>
+                  <button onClick={() => handleCompleteQueue(selectedQueue.id)} className="p-4 bg-green-50 text-green-700 rounded-xl font-bold flex flex-col items-center gap-2 col-span-2 hover:bg-green-100 transition-colors"><CheckCircle />Complete Session</button>
                 </div>
                 <button onClick={() => setSelectedQueue(null)} className="w-full py-2 text-gray-500 font-medium">Close</button>
               </div>

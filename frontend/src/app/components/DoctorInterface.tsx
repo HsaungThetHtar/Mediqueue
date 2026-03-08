@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { Clock, CheckCircle, User, FileText, Phone, LogOut, Calendar } from 'lucide-react';
 import { clearSession, getSession } from '../../api/auth';
-import { getQueues } from '../../api/queues';
-import { getDoctorsByUserId, updatePatientStatus, saveBookingNotes } from '../../api/doctors';
+import { getDoctorsByUserId, getMyQueues, updatePatientStatus, saveBookingNotes } from '../../api/doctors';
 import { getDepartmentName } from '../../utils/department';
+import { useRealtimeEvent } from '../context/RealtimeContext';
 
 interface Patient {
   id: string;
@@ -80,7 +80,7 @@ export function DoctorInterface() {
         setDoctorId(doc._id);
 
         const today = todayISO();
-        const data = await getQueues({ doctor: doc._id, date: today });
+        const data = await getMyQueues(today);
         const patientIdObj = (q: any) => (q.patientId && typeof q.patientId === 'object' ? q.patientId : null);
         setPatients(
           data.map((q) => {
@@ -116,6 +116,9 @@ export function DoctorInterface() {
     load();
   }, []);
 
+  useRealtimeEvent('queue-update', () => { if (doctorId) refreshPatients(); });
+  useRealtimeEvent('booking-update', () => { if (doctorId) refreshPatients(); });
+
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [showNotes, setShowNotes] = useState(false);
   const [medicalNotes, setMedicalNotes] = useState('');
@@ -127,7 +130,7 @@ export function DoctorInterface() {
 
   const refreshPatients = async () => {
     if (!doctorId) return;
-    const data = await getQueues({ doctor: doctorId, date: todayISO() });
+    const data = await getMyQueues(todayISO());
     const patientIdObj = (q: any) => (q.patientId && typeof q.patientId === 'object' ? q.patientId : null);
     setPatients(
       data.map((q) => {

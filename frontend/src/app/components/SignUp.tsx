@@ -192,7 +192,7 @@ export function SignUp() {
             {/* Gender */}
             <div>
               <label className="block font-medium text-[14px] leading-[14px] text-[#364153] mb-2">
-                เพศ (Gender)
+                Gender
               </label>
               <div className="relative">
                 <select
@@ -200,10 +200,10 @@ export function SignUp() {
                   onChange={(e) => handleInputChange('gender', e.target.value)}
                   className="w-full h-12 pl-10 pr-3 bg-[#f3f3f5] border border-[#d1d5dc] rounded-[10px] text-[14px] text-[#364153] focus:outline-none focus:ring-2 focus:ring-[#1e88e5] focus:border-transparent"
                 >
-                  <option value="">— เลือกเพศ —</option>
-                  <option value="male">ชาย (Male)</option>
-                  <option value="female">หญิง (Female)</option>
-                  <option value="other">อื่นๆ (Other)</option>
+                  <option value="">— Gender —</option>
+                  <option value="male">Male (Male)</option>
+                  <option value="female">Female (Female)</option>
+                  <option value="other">Other (Other)</option>
                 </select>
               </div>
             </div>

@@ -24,7 +24,7 @@ function calcTrend(current: number, prev: number): { text: string; up: boolean }
 }
 
 export function Dashboard() {
-    const { queues, getStatusBadge, filteredQueues, prevDayStats } = useOutletContext<DashboardProps>();
+    const { queues, getStatusBadge, filteredQueues, prevDayStats, setSelectedQueue } = useOutletContext<DashboardProps>();
     const navigate = useNavigate();
 
     const [morningPage, setMorningPage] = useState(1);
@@ -123,6 +123,7 @@ export function Dashboard() {
                                 queues={paginatedMorning}
                                 totalCount={totalMorning}
                                 getStatusBadge={getStatusBadge}
+                                setSelectedQueue={setSelectedQueue}
                             />
                             {totalMorning > pageSize && (
                                 <div className="px-10 py-4 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3 bg-white">
@@ -147,6 +148,7 @@ export function Dashboard() {
                                 queues={paginatedAfternoon}
                                 totalCount={totalAfternoon}
                                 getStatusBadge={getStatusBadge}
+                                setSelectedQueue={setSelectedQueue}
                             />
                             {totalAfternoon > pageSize && (
                                 <div className="px-10 py-4 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3 bg-white">
@@ -178,7 +180,7 @@ export function Dashboard() {
     );
 }
 
-function SessionTable({ title, icon, bgColor, borderColor, textColor, queues, totalCount, getStatusBadge }: any) {
+function SessionTable({ title, icon, bgColor, borderColor, textColor, queues, totalCount, getStatusBadge, setSelectedQueue }: any) {
     return (
         <div className="w-full">
             <div className={`${bgColor} px-10 py-4 flex items-center justify-between border-y ${borderColor}`}>
@@ -202,7 +204,7 @@ function SessionTable({ title, icon, bgColor, borderColor, textColor, queues, to
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                         {queues.map((q: any) => (
-                            <QueueRow key={q.id} queue={q} getStatusBadge={getStatusBadge} />
+                            <QueueRow key={q.id} queue={q} getStatusBadge={getStatusBadge} onSelect={setSelectedQueue} />
                         ))}
                     </tbody>
                 </table>
@@ -211,9 +213,15 @@ function SessionTable({ title, icon, bgColor, borderColor, textColor, queues, to
     );
 }
 
-function QueueRow({ queue, getStatusBadge }: any) {
+function QueueRow({ queue, getStatusBadge, onSelect }: any) {
     return (
-        <tr className="group hover:bg-gray-50/50 transition-colors">
+        <tr
+            role="button"
+            tabIndex={0}
+            onClick={() => onSelect?.(queue)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.(queue); } }}
+            className="group hover:bg-gray-50/50 transition-colors cursor-pointer"
+        >
             <td className="py-6 px-10 font-black text-gray-900 text-[15px]">{queue.queueNumber}</td>
             <td className="py-6 px-6 font-bold text-gray-700 text-[15px]">
                 <div className="flex flex-col">

@@ -62,7 +62,7 @@ export function Settings() {
 
   // Doctor modal: add / edit
   const [doctorModal, setDoctorModal] = useState<{ open: boolean; mode: 'add' | 'edit'; item?: any }>({ open: false, mode: 'add' });
-  const [doctorForm, setDoctorForm] = useState({ name: '', departmentId: '', workingHours: '08:00 - 17:00' });
+  const [doctorForm, setDoctorForm] = useState({ name: '', departmentId: '', workingHours: '08:00 - 17:00', email: '', password: '', unlinkUser: false });
   const [doctorSaving, setDoctorSaving] = useState(false);
   const [doctorDeleting, setDoctorDeleting] = useState<string | null>(null);
 
@@ -249,7 +249,7 @@ export function Settings() {
       setDepartments(deptList);
     }
     const firstId = deptList[0] ? String(getDeptId(deptList[0])) : '';
-    setDoctorForm({ name: '', departmentId: firstId, workingHours: '08:00 - 17:00' });
+    setDoctorForm({ name: '', departmentId: firstId, workingHours: '08:00 - 17:00', email: '', password: '', unlinkUser: false });
     setDoctorModal({ open: true, mode: 'add' });
   };
 
@@ -265,10 +265,14 @@ export function Settings() {
       : (item.department ?? '');
     const deptId = rawDeptId != null ? String(rawDeptId) : '';
     const firstId = deptList[0] ? String(getDeptId(deptList[0])) : '';
+    const linkedEmail = item.userId?.email ?? '';
     setDoctorForm({
       name: item.name ?? '',
       departmentId: deptId || firstId,
       workingHours: item.workingHours ?? '08:00 - 17:00',
+      email: linkedEmail,
+      password: '',
+      unlinkUser: false,
     });
     setDoctorModal({ open: true, mode: 'edit', item });
   };
@@ -282,9 +286,24 @@ export function Settings() {
     setDoctorSaving(true);
     try {
       if (doctorModal.mode === 'add') {
-        await createDoctor({ name: doctorForm.name.trim(), departmentId: doctorForm.departmentId, workingHours: doctorForm.workingHours });
+        await createDoctor({
+          name: doctorForm.name.trim(),
+          departmentId: doctorForm.departmentId,
+          workingHours: doctorForm.workingHours,
+          ...(doctorForm.email?.trim() && doctorForm.password ? { email: doctorForm.email.trim(), password: doctorForm.password } : {}),
+        });
       } else if (doctorModal.item) {
-        await updateDoctor(doctorModal.item._id, { name: doctorForm.name.trim(), departmentId: doctorForm.departmentId, workingHours: doctorForm.workingHours });
+        const payload: Record<string, unknown> = {
+          name: doctorForm.name.trim(),
+          departmentId: doctorForm.departmentId,
+          workingHours: doctorForm.workingHours,
+        };
+        if (doctorForm.unlinkUser) payload.unlinkUser = true;
+        else if (doctorForm.email?.trim() && doctorForm.password) {
+          payload.email = doctorForm.email.trim();
+          payload.password = doctorForm.password;
+        }
+        await updateDoctor(doctorModal.item._id, payload);
       }
       closeDoctorModal();
       loadDoctors();
@@ -561,6 +580,7 @@ export function Settings() {
                         <tr>
                           <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">ชื่อ</th>
                           <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">แผนก</th>
+                          <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">บัญชีล็อกอิน (users)</th>
                           <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">เวลาทำการ</th>
                           <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">คิววันนี้</th>
                           <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">จัดการ</th>
@@ -571,6 +591,7 @@ export function Settings() {
                           <tr key={doc._id ?? doc.id} className="hover:bg-gray-50/50">
                             <td className="px-4 py-3 font-medium text-gray-900">{doc.name ?? '—'}</td>
                             <td className="px-4 py-3 text-sm text-gray-600">{getDepartmentName(doc.department)}</td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{doc.userId?.email ?? '—'}</td>
                             <td className="px-4 py-3 text-sm text-gray-500">{doc.workingHours ?? '—'}</td>
                             <td className="px-4 py-3 text-sm text-gray-500">{doc.currentQueue ?? 0} / {doc.maxQueue ?? 30}</td>
                             <td className="px-4 py-3">
@@ -761,6 +782,45 @@ export function Settings() {
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   placeholder="08:00 - 17:00"
                 />
+              </div>
+              <div className="border-t border-gray-100 pt-4 mt-4">
+                <p className="text-xs font-medium text-gray-500 mb-2">บัญชีล็อกอิน (ตาราง users) — ผูกกับหมอเพื่อให้ล็อกอินเข้า Doctor Dashboard ได้</p>
+                {doctorModal.mode === 'edit' && doctorForm.email && (
+                  <label className="flex items-center gap-2 mb-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={doctorForm.unlinkUser}
+                      onChange={(e) => setDoctorForm((f) => ({ ...f, unlinkUser: e.target.checked }))}
+                      className="w-4 h-4 text-red-600 rounded"
+                    />
+                    <span className="text-sm text-gray-700">ยกเลิกผูกบัญชี (ลบการเชื่อมกับ users)</span>
+                  </label>
+                )}
+                {(!doctorForm.unlinkUser || doctorModal.mode === 'add') && (
+                  <>
+                    <div className="mb-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">อีเมล (สำหรับล็อกอิน)</label>
+                      <input
+                        type="email"
+                        value={doctorForm.email}
+                        onChange={(e) => setDoctorForm((f) => ({ ...f, email: e.target.value }))}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder={doctorModal.mode === 'edit' ? 'เว้นว่างถ้าไม่เปลี่ยน' : 'ถ้าใส่จะสร้างบัญชีให้หมอล็อกอินได้'}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่าน</label>
+                      <input
+                        type="password"
+                        value={doctorForm.password}
+                        onChange={(e) => setDoctorForm((f) => ({ ...f, password: e.target.value }))}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder={doctorModal.mode === 'edit' ? 'เว้นว่างถ้าไม่เปลี่ยน' : 'สำหรับบัญชีล็อกอิน'}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">{doctorModal.mode === 'add' ? 'ใส่ทั้งอีเมลและรหัสผ่านจะสร้างบัญชี users (role: doctor) และผูกกับหมอนี้' : 'ใส่อีเมล+รหัสผ่านใหม่จะสร้าง/ผูกบัญชี (อีเมลซ้ำกับหมออื่นไม่ได้)'}</p>
+                  </>
+                )}
               </div>
             </div>
             <div className="flex gap-3 mt-6">

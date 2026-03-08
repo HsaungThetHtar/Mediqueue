@@ -108,8 +108,17 @@ node seed.js
 | บทบาท | อีเมล | รหัสผ่าน |
 |--------|--------|----------|
 | แอดมิน | admin@mediqueue.com | password123 |
-| หมอ | doctor@mediqueue.com | password123 |
+| หมอ | doctor1@mediqueue.com … doctor10@mediqueue.com (หมอ 10 คน แต่ละคน 1 บัญชี) | password123 |
 | ผู้ป่วย | somchai.p@email.com (และอื่นๆ ตาม seed) | password123 |
+
+**ความสัมพันธ์ตาราง doctors กับ users**
+
+- หมอแต่ละคนใน collection **doctors** ผูกกับบัญชีใน **users** (role: `doctor`) ผ่านฟิลด์ `doctors.userId` ได้หนึ่งบัญชี
+- แอดมิน **เพิ่ม / แก้ไข / ลบ** หมอที่ **ตั้งค่า → หมอ** ระบบจะเชื่อม doctors กับ users ให้สอดคล้องกัน:
+  - **เพิ่มหมอ:** ถ้ากรอกอีเมล+รหัสผ่าน ระบบจะสร้าง User (role: doctor) ในตาราง users และตั้ง `doctors.userId` ให้
+  - **แก้ไขหมอ:** สามารถผูกบัญชีใหม่ (อีเมล+รหัสผ่าน) หรือยกเลิกผูก (unlink) ได้
+  - **ลบหมอ:** ระบบจะลบรายการใน doctors และลบบัญชี users ที่ผูกกับหมอคนนั้น (role: doctor) ด้วย
+- Seed จะสร้างบัญชีล็อกอินให้หมอทุกคน (doctor1@mediqueue.com = หมอคนที่ 1, …) และผูกกับรายการใน doctors ให้แล้ว
 
 ---
 

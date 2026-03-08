@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router';
 import { io } from 'socket.io-client';
-import { Bell, X, Check, AlertCircle, CheckCircle, Clock, MessageSquare } from 'lucide-react';
+import { Bell, X, Check, AlertCircle, CheckCircle, Clock, MessageSquare, ArrowLeft } from 'lucide-react';
 import { getSession } from '../../api/auth';
 import { BASE_URL } from '../../api/client';
 
@@ -27,15 +28,14 @@ export function NotificationScreen({ onClose }: NotificationScreenProps) {
       .catch(err => console.error('fetch notifications', err));
 
     const socket = io(BASE_URL);
-    getSession().then(user => {
-      if (user) {
-        socket.on('notification', (payload: any) => {
-          if (payload.userId === user.id) {
-            setNotifications(prev => [payload.notification, ...prev]);
-          }
-        });
-      }
-    });
+    const user = getSession();
+    if (user) {
+      socket.on('notification', (payload: any) => {
+        if (payload.userId === user.id) {
+          setNotifications(prev => [payload.notification, ...prev]);
+        }
+      });
+    }
     return () => { socket.disconnect(); };
   }, []);
 
@@ -110,13 +110,24 @@ export function NotificationScreen({ onClose }: NotificationScreenProps) {
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-4 py-6">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Notifications</h1>
-              {unreadCount > 0 && (
-                <p className="text-sm text-gray-600 mt-1">
-                  {unreadCount} unread notification{unreadCount !== 1 ? 's' : ''}
-                </p>
+            <div className="flex items-center gap-3">
+              {!onClose && (
+                <Link
+                  to="/dashboard"
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600 hover:text-gray-900"
+                  title="Back to Dashboard"
+                >
+                  <ArrowLeft className="w-6 h-6" />
+                </Link>
               )}
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Notifications</h1>
+                {unreadCount > 0 && (
+                  <p className="text-sm text-gray-600 mt-1">
+                    {unreadCount} unread notification{unreadCount !== 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
             </div>
             {onClose && (
               <button

@@ -32,7 +32,8 @@ export function BookingSlip() {
   const onBackToHomeHandler = handleBackToHome;
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showQueueCalledModal, setShowQueueCalledModal] = useState(false);
-  const [currentServing, setCurrentServing] = useState(bookingData.currentlyServing || 'Q-000');
+  const prefix = (bookingData.queueNumber || 'Q-000').split('-')[0] || 'Q';
+  const [currentServing, setCurrentServing] = useState(bookingData.currentlyServing || `${prefix}-000`);
   const [waitingTime, setWaitingTime] = useState(0);
 
   const formatDisplayDate = (dateStr: string) => {
@@ -52,22 +53,23 @@ export function BookingSlip() {
     timestamp: new Date().toISOString(),
   });
 
-  // ดึงสถานะคิวจริงจาก API (อัปเดตทุก 20 วินาที)
+  // Fetch real queue status from API (on mount, every 15s, and on queue-update)
   const bookingId = (bookingData as any).bookingId || (bookingData as any).id || (bookingData as any)._id;
-  useEffect(() => {
+  const fetchStatus = React.useCallback(() => {
     if (!bookingId) return;
-    const fetchStatus = () => {
-      getQueueStatus(bookingId)
-        .then((s) => {
-          setCurrentServing(s.currentlyServing);
-          setWaitingTime(s.estimatedWaitMinutes);
-        })
-        .catch(() => {});
-    };
+    getQueueStatus(bookingId)
+      .then((s) => {
+        setCurrentServing(s.currentlyServing || `${prefix}-000`);
+        setWaitingTime(s.estimatedWaitMinutes ?? 0);
+      })
+      .catch(() => {});
+  }, [bookingId, prefix]);
+
+  useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 20000);
+    const interval = setInterval(fetchStatus, 15000);
     return () => clearInterval(interval);
-  }, [bookingId]);
+  }, [fetchStatus]);
 
   const handleCancelClick = () => {
     setShowCancelModal(true);
@@ -93,24 +95,26 @@ export function BookingSlip() {
     setShowQueueCalledModal(false);
   };
 
-  // ฟังเหตุการณ์เรียกคิวจริงจาก WebSocket (admin call / doctor เริ่มนัด)
+  // Listen for call/queue updates: show modal when this booking is called, and refetch Live Queue Status on any queue change
   useEffect(() => {
-    if (!bookingData?.bookingId) return;
+    if (!bookingId) return;
     const socket = io(BASE_URL);
     socket.on('booking-update', (payload: { bookingId: string; status: string }) => {
-      if (payload.bookingId === bookingData.bookingId && payload.status === 'in-progress') {
+      if (payload.bookingId === bookingId && payload.status === 'in-progress') {
         setShowQueueCalledModal(true);
       }
+      fetchStatus();
     });
     socket.on('queue-update', (payload: { type: string; booking?: { _id: string } }) => {
-      if (payload.type === 'called' && payload.booking?._id === bookingData.bookingId) {
+      if (payload.type === 'called' && payload.booking?._id === bookingId) {
         setShowQueueCalledModal(true);
       }
+      fetchStatus();
     });
     return () => {
       socket.disconnect();
     };
-  }, [bookingData?.bookingId]);
+  }, [bookingId, fetchStatus]);
 
   return (
     <>

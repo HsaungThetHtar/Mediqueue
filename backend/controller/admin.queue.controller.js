@@ -6,6 +6,11 @@ const Notification = require("../models/Notification");
 const populateDoctorAndDepartment = (q) =>
   q.populate({ path: "doctor", select: "name department", populate: { path: "department", select: "name" } }).populate("department", "name");
 
+function queueNumberToServingInt(queueNumber) {
+  const parts = String(queueNumber || "").split("-");
+  return parts.length === 2 ? parseInt(parts[1], 10) || 0 : 0;
+}
+
 // GET /admin/queues/:id — ดึง booking เดียว (สำหรับหน้า details)
 exports.getQueueById = async function (req, res) {
   try {
@@ -42,17 +47,41 @@ exports.getQueues = async function (req, res) {
 exports.callQueue = async function (req, res) {
   try {
     const booking = await populateDoctorAndDepartment(
-      Booking.findByIdAndUpdate(req.params.id, { status: "in-progress" }, { new: true })
+      Booking.findByIdAndUpdate(req.params.id, { status: "in-progress", calledAt: new Date() }, { new: true })
     );
 
     if (!booking) return res.status(404).json({ message: "Queue not found" });
 
     await Doctor.findByIdAndUpdate(booking.doctor._id, {
-      currentQueueServing: booking.queueNumber,
+      currentQueueServing: queueNumberToServingInt(booking.queueNumber),
     });
 
+    const notifDoc = await Notification.create({
+      userId: booking.patientId,
+      title: "Your Queue is Called!",
+      message: "Please proceed to the consultation room immediately.",
+      type: "status",
+      relatedBookingId: booking._id,
+    });
+
+    const departmentName = booking.department?.name || "";
     const io = req.app.get("io");
     io.emit("queue-update", { type: "called", booking });
+    io.emit("notification", {
+      userId: String(booking.patientId),
+      notification: {
+        _id: notifDoc._id,
+        title: notifDoc.title,
+        message: notifDoc.message,
+        type: "status",
+        relatedBookingId: booking._id,
+        isRead: false,
+        createdAt: notifDoc.createdAt,
+        queueNumber: booking.queueNumber,
+        doctorName: booking.doctorName,
+        departmentName,
+      },
+    });
 
     console.log("[NOTI] Called:", booking.patientName, "-", booking.queueNumber);
     res.json(booking);
@@ -77,9 +106,13 @@ exports.skipQueue = async function (req, res) {
         timeSlot: booking.timeSlot,
         status: "waiting",
       },
-      { status: "in-progress" },
+      { status: "in-progress", calledAt: new Date() },
       { new: true, sort: { createdAt: 1 } }
     );
+
+    await Doctor.findByIdAndUpdate(booking.doctor._id, {
+      currentQueueServing: nextBooking ? queueNumberToServingInt(nextBooking.queueNumber) : 0,
+    });
 
     const io = req.app.get("io");
     io.emit("queue-update", { type: "skipped", booking, nextBooking: nextBooking || null });
@@ -102,6 +135,10 @@ exports.completeQueue = async function (req, res) {
     );
 
     if (!booking) return res.status(404).json({ message: "Queue not found" });
+
+    await Doctor.findByIdAndUpdate(booking.doctor._id, {
+      currentQueueServing: queueNumberToServingInt(booking.queueNumber),
+    });
 
     const io = req.app.get("io");
     io.emit("queue-update", { type: "completed", booking });
@@ -168,7 +205,7 @@ exports.manualCheckIn = async function (req, res) {
 
     await Booking.findByIdAndUpdate(bookingId, { status: "checked-in" });
 
-    await Notification.create({
+    const notifDoc = await Notification.create({
       userId: booking.patientId,
       title: "Check-in Confirmed by Staff",
       message: `Staff has checked you in for your appointment with ${booking.doctorName}.`,
@@ -178,6 +215,10 @@ exports.manualCheckIn = async function (req, res) {
 
     const io = req.app.get("io");
     io.emit("checkin-update", { bookingId, status: "checked-in" });
+    io.emit("notification", {
+      userId: String(booking.patientId),
+      notification: { _id: notifDoc._id, title: notifDoc.title, message: notifDoc.message, type: "status", relatedBookingId: bookingId, isRead: false, createdAt: notifDoc.createdAt },
+    });
 
     res.status(201).json(checkIn);
   } catch (err) {
