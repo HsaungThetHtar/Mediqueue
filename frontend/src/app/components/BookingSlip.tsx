@@ -1,18 +1,45 @@
-import { useState, useEffect } from 'react';
-import { Building2, Calendar, User, Clock, Activity, Home, X, QrCode } from 'lucide-react';
-import { BookingData } from '../App';
+import React, { useState, useEffect } from 'react';
+import { Building2, Calendar, User, Clock, Activity, Home, X, QrCode, Bell, CheckCircle, AlertTriangle } from 'lucide-react';
+import { io } from 'socket.io-client';
+import { BookingData } from '../MainApp';
+import { cancelBooking, getQueueStatus } from '../../api/bookings';
+import { BASE_URL } from '../../api/client';
 import { QRCodeSVG } from 'qrcode.react';
+import { getDepartmentName } from '../../utils/department';
+import { useNavigate, useOutletContext } from 'react-router';
 
-interface BookingSlipProps {
-  bookingData: BookingData;
-  onCancelBooking: () => void;
-  onBackToHome: () => void;
+interface MainAppContext {
+  bookingData: BookingData | null;
+  handleCancelBooking: () => void;
+  handleBackToHome: () => void;
 }
 
-export function BookingSlip({ bookingData, onCancelBooking, onBackToHome }: BookingSlipProps) {
+export function BookingSlip() {
+  const { bookingData, handleCancelBooking, handleBackToHome } = useOutletContext<MainAppContext>();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!bookingData) {
+      navigate('/app/select-date', { replace: true });
+    }
+  }, [bookingData, navigate]);
+
+  if (!bookingData) {
+    return null;
+  }
+
+  const onCancelBooking = handleCancelBooking;
+  const onBackToHomeHandler = handleBackToHome;
   const [showCancelModal, setShowCancelModal] = useState(false);
-  const [currentServing, setCurrentServing] = useState(bookingData.currentlyServing);
+  const [showQueueCalledModal, setShowQueueCalledModal] = useState(false);
+  const [currentServing, setCurrentServing] = useState(bookingData.currentlyServing || 'Q-000');
   const [waitingTime, setWaitingTime] = useState(0);
+
+  const formatDisplayDate = (dateStr: string) => {
+    if (!dateStr) return dateStr;
+    const d = new Date(dateStr + 'T12:00:00');
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
 
   // Generate QR code data
   const qrCodeData = JSON.stringify({
@@ -25,40 +52,36 @@ export function BookingSlip({ bookingData, onCancelBooking, onBackToHome }: Book
     timestamp: new Date().toISOString(),
   });
 
-  // Simulate live queue updates
+  // ดึงสถานะคิวจริงจาก API (อัปเดตทุก 20 วินาที)
+  const bookingId = (bookingData as any).bookingId || (bookingData as any).id || (bookingData as any)._id;
   useEffect(() => {
-    const queueNum = parseInt(bookingData.queueNumber.split('-')[1]);
-    const servingNum = parseInt(currentServing.split('-')[1]);
-    const remaining = queueNum - servingNum;
-    setWaitingTime(remaining * 15);
-
-    const interval = setInterval(() => {
-      setCurrentServing(prev => {
-        const num = parseInt(prev.split('-')[1]);
-        if (num < queueNum - 1) {
-          return `Q-${String(num + 1).padStart(3, '0')}`;
-        }
-        return prev;
-      });
-    }, 10000); // Update every 10 seconds for demo
-
+    if (!bookingId) return;
+    const fetchStatus = () => {
+      getQueueStatus(bookingId)
+        .then((s) => {
+          setCurrentServing(s.currentlyServing);
+          setWaitingTime(s.estimatedWaitMinutes);
+        })
+        .catch(() => {});
+    };
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 20000);
     return () => clearInterval(interval);
-  }, [bookingData.queueNumber, currentServing]);
-
-  // Update waiting time when currently serving changes
-  useEffect(() => {
-    const queueNum = parseInt(bookingData.queueNumber.split('-')[1]);
-    const servingNum = parseInt(currentServing.split('-')[1]);
-    const remaining = Math.max(0, queueNum - servingNum);
-    setWaitingTime(remaining * 15);
-  }, [currentServing, bookingData.queueNumber]);
+  }, [bookingId]);
 
   const handleCancelClick = () => {
     setShowCancelModal(true);
   };
 
-  const handleConfirmCancel = () => {
+  const handleConfirmCancel = async () => {
     setShowCancelModal(false);
+    if (bookingData.bookingId) {
+      try {
+        await cancelBooking(bookingData.bookingId);
+      } catch (err) {
+        console.error('Cancel booking error:', err);
+      }
+    }
     onCancelBooking();
   };
 
@@ -66,9 +89,32 @@ export function BookingSlip({ bookingData, onCancelBooking, onBackToHome }: Book
     setShowCancelModal(false);
   };
 
+  const handleImOnMyWay = () => {
+    setShowQueueCalledModal(false);
+  };
+
+  // ฟังเหตุการณ์เรียกคิวจริงจาก WebSocket (admin call / doctor เริ่มนัด)
+  useEffect(() => {
+    if (!bookingData?.bookingId) return;
+    const socket = io(BASE_URL);
+    socket.on('booking-update', (payload: { bookingId: string; status: string }) => {
+      if (payload.bookingId === bookingData.bookingId && payload.status === 'in-progress') {
+        setShowQueueCalledModal(true);
+      }
+    });
+    socket.on('queue-update', (payload: { type: string; booking?: { _id: string } }) => {
+      if (payload.type === 'called' && payload.booking?._id === bookingData.bookingId) {
+        setShowQueueCalledModal(true);
+      }
+    });
+    return () => {
+      socket.disconnect();
+    };
+  }, [bookingData?.bookingId]);
+
   return (
     <>
-      <div className="min-h-screen bg-gray-50 px-4 py-6 md:px-8 md:py-10">
+      <div className="min-h-screen bg-gray-50 px-4 py-6 md:px-10 md:py-10">
         <div className="mx-auto max-w-7xl">
           {/* Header */}
           <div className="mb-8">
@@ -120,7 +166,7 @@ export function BookingSlip({ bookingData, onCancelBooking, onBackToHome }: Book
                 {/* Booking Details */}
                 <div className="p-8 space-y-5">
                   <h3 className="font-semibold text-gray-900 mb-6 text-base">Booking Details</h3>
-                  
+
                   <div className="flex items-start gap-4">
                     <Building2 className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
                     <div>
@@ -133,7 +179,7 @@ export function BookingSlip({ bookingData, onCancelBooking, onBackToHome }: Book
                     <Activity className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
                     <div>
                       <p className="text-sm text-gray-500 mb-1">Department</p>
-                      <p className="text-base font-medium text-gray-900">{bookingData.department}</p>
+                      <p className="text-base font-medium text-gray-900">{getDepartmentName(bookingData.department)}</p>
                     </div>
                   </div>
 
@@ -149,7 +195,7 @@ export function BookingSlip({ bookingData, onCancelBooking, onBackToHome }: Book
                     <Calendar className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
                     <div>
                       <p className="text-sm text-gray-500 mb-1">Date</p>
-                      <p className="text-base font-medium text-gray-900">{bookingData.date}</p>
+                      <p className="text-base font-medium text-gray-900">{formatDisplayDate(bookingData.date)}</p>
                     </div>
                   </div>
 
@@ -191,15 +237,15 @@ export function BookingSlip({ bookingData, onCancelBooking, onBackToHome }: Book
 
             {/* Right Column - Live Status & Actions */}
             <div className="space-y-6">
-              {/* Live Queue Status */}
+              {/* Live Queue Status — Now Serving เป็นการประมาณจากคิวของคุณ (อัปเดตตามเวลา) */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
                 <h3 className="font-semibold text-gray-900 mb-6 flex items-center gap-2 text-base">
                   <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse"></div>
                   Live Queue Status
                 </h3>
-                
+
                 <div className="bg-blue-50 rounded-xl p-6 mb-5">
-                  <p className="text-sm text-blue-800 mb-3 font-medium">Now Serving</p>
+                  <p className="text-sm text-blue-800 mb-3 font-medium">Now Serving (estimated)</p>
                   <p className="text-4xl font-bold text-[#1E88E5]">{currentServing}</p>
                 </div>
 
@@ -228,9 +274,9 @@ export function BookingSlip({ bookingData, onCancelBooking, onBackToHome }: Book
                   <X className="w-5 h-5" />
                   Cancel Booking
                 </button>
-                
+
                 <button
-                  onClick={onBackToHome}
+                  onClick={onBackToHomeHandler}
                   className="w-full py-5 rounded-xl font-semibold text-gray-700 text-base transition-colors bg-white hover:bg-gray-50 active:bg-gray-100 border-2 border-gray-200 flex items-center justify-center gap-2"
                 >
                   <Home className="w-5 h-5" />
@@ -275,6 +321,69 @@ export function BookingSlip({ bookingData, onCancelBooking, onBackToHome }: Book
                   className="flex-1 py-3 rounded-xl font-semibold text-gray-700 text-base transition-colors bg-gray-100 hover:bg-gray-200 active:bg-gray-300"
                 >
                   No, Go Back
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Your Queue is Called! Modal */}
+      {showQueueCalledModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden">
+            <div className="bg-[#2E7D32] text-white p-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                  <Bell className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold">Your Queue is Called!</h2>
+                  <p className="text-white/90 text-sm mt-0.5">Please proceed immediately</p>
+                </div>
+              </div>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="bg-green-50 border border-green-200 rounded-xl p-5 text-center">
+                <p className="text-sm text-green-800 mb-1">Your Queue Number</p>
+                <p className="text-4xl font-bold text-[#2E7D32]">{bookingData.queueNumber}</p>
+                <p className="text-sm text-green-700 mt-1">is now being called</p>
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <User className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs text-gray-500">Doctor</p>
+                    <p className="font-semibold text-gray-900">{bookingData.doctor}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Activity className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs text-gray-500">Department</p>
+                    <p className="font-semibold text-gray-900">{getDepartmentName(bookingData.department)}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-900">
+                  <span className="font-semibold">Important:</span> Please proceed to the consultation room immediately. If you don&apos;t respond within 10 minutes, your queue may be skipped.
+                </p>
+              </div>
+              <div className="flex flex-col gap-3 pt-2">
+                <button
+                  onClick={handleImOnMyWay}
+                  className="w-full py-4 rounded-xl font-semibold text-white bg-[#2E7D32] hover:bg-[#1B5E20] flex items-center justify-center gap-2"
+                >
+                  <CheckCircle className="w-5 h-5" />
+                  I&apos;m on My Way
+                </button>
+                <button
+                  onClick={() => setShowQueueCalledModal(false)}
+                  className="w-full py-4 rounded-xl font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 flex items-center justify-center"
+                >
+                  Close Notification
                 </button>
               </div>
             </div>

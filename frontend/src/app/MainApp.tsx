@@ -1,12 +1,10 @@
-import { useState } from 'react';
-import { SelectDateDepartment, DateDepartmentSelection } from './components/SelectDateDepartment';
-import { SelectedDoctor, Doctor } from './components/SelectedDoctor';
-import { QueueBooking } from './components/QueueBooking';
-import { BookingSlip } from './components/BookingSlip';
-
-export type Screen = 'selectDateDepartment' | 'selectDoctor' | 'booking' | 'slip';
+import { useState, useEffect } from 'react';
+import { Outlet, useNavigate, useLocation } from 'react-router';
+import { DateDepartmentSelection } from './components/SelectDateDepartment';
+import { Doctor } from './components/SelectedDoctor';
 
 export interface BookingData {
+  bookingId: string;
   queueNumber: string;
   hospital: string;
   department: string;
@@ -17,74 +15,71 @@ export interface BookingData {
 }
 
 export default function MainApp() {
-  const [currentScreen, setCurrentScreen] = useState<Screen>('selectDateDepartment');
   const [dateAndDepartment, setDateAndDepartment] = useState<DateDepartmentSelection | null>(null);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [bookingData, setBookingData] = useState<BookingData | null>(null);
 
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    // Redirect to select-date if at root /app
+    if (location.pathname === '/app' || location.pathname === '/app/') {
+      navigate('/app/select-date', { replace: true });
+    }
+  }, [location.pathname, navigate]);
+
   const handleDateDepartmentSelection = (selection: DateDepartmentSelection) => {
     setDateAndDepartment(selection);
-    setCurrentScreen('selectDoctor');
+    navigate('/app/select-doctor');
   };
 
   const handleDoctorSelection = (doctor: Doctor) => {
     setSelectedDoctor(doctor);
-    setCurrentScreen('booking');
+    navigate('/app/booking');
   };
 
   const handleBackToDateDepartment = () => {
-    setCurrentScreen('selectDateDepartment');
+    navigate('/app/select-date');
   };
 
   const handleBackToSelection = () => {
-    setCurrentScreen('selectDoctor');
+    navigate('/app/select-doctor');
   };
 
   const handleConfirmBooking = (data: BookingData) => {
     setBookingData(data);
-    setCurrentScreen('slip');
+    navigate('/app/slip');
   };
 
   const handleCancelBooking = () => {
     setBookingData(null);
-    setCurrentScreen('selectDoctor');
+    navigate('/app/select-doctor');
   };
 
   const handleBackToHome = () => {
     setBookingData(null);
     setSelectedDoctor(null);
     setDateAndDepartment(null);
-    setCurrentScreen('selectDateDepartment');
+    navigate('/dashboard');
+  };
+
+  const contextValues = {
+    dateAndDepartment,
+    selectedDoctor,
+    bookingData,
+    handleDateDepartmentSelection,
+    handleDoctorSelection,
+    handleBackToDateDepartment,
+    handleBackToSelection,
+    handleConfirmBooking,
+    handleCancelBooking,
+    handleBackToHome
   };
 
   return (
     <div className="min-h-screen bg-white">
-      {currentScreen === 'selectDateDepartment' && (
-        <SelectDateDepartment onContinue={handleDateDepartmentSelection} />
-      )}
-      {currentScreen === 'selectDoctor' && dateAndDepartment && (
-        <SelectedDoctor 
-          onContinue={handleDoctorSelection}
-          selectedDepartment={dateAndDepartment.department}
-          selectedDate={dateAndDepartment.date}
-          onBack={handleBackToDateDepartment}
-        />
-      )}
-      {currentScreen === 'booking' && selectedDoctor && dateAndDepartment && (
-        <QueueBooking 
-          onConfirmBooking={handleConfirmBooking}
-          selectedDoctor={selectedDoctor}
-          onBackToSelection={handleBackToSelection}
-          selectedDate={dateAndDepartment.date}
-        />
-      )}
-      {currentScreen === 'slip' && bookingData && (
-        <BookingSlip 
-          bookingData={bookingData}
-          onCancelBooking={handleCancelBooking}
-          onBackToHome={handleBackToHome}
-        />
-      )}
+      <Outlet context={contextValues} />
     </div>
   );
 }

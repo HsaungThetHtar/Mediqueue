@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import svgPaths from '../../imports/svg-hiih1kv4yo';
 import { Eye, EyeOff } from 'lucide-react';
+import Swal from 'sweetalert2';
 
 export function SignIn() {
   const navigate = useNavigate();
@@ -9,18 +10,33 @@ export function SignIn() {
   const [emailOrPhone, setEmailOrPhone] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleSignIn = (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle sign in logic here
-    console.log('Sign in:', { emailOrPhone, password });
-    // Navigate to the main app
-    navigate('/app');
+    try {
+      const result = await import('../../api/auth').then(m => m.signIn(emailOrPhone, password));
+      // save token and user
+      import('../../api/auth').then(m => m.saveSession(result.token, result.user));
+      // navigate based on role
+      switch (result.user.role) {
+        case 'admin':
+          navigate('/admin');
+          break;
+        case 'doctor':
+          navigate('/doctor');
+          break;
+        default:
+          navigate('/app/select-date');
+          break;
+      }
+    } catch (err: any) {
+      Swal.fire({ icon: 'error', title: 'Sign In Failed', text: err.message || 'Failed to sign in', confirmButtonColor: '#1E88E5' });
+    }
   };
 
   const handleDemoLogin = () => {
     // Fill in demo credentials instead of auto-login
-    setEmailOrPhone('demo@mediqueue.com');
-    setPassword('demo1234');
+    setEmailOrPhone('admin@mediqueue.com');
+    setPassword('password123');
   };
 
   return (

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import svgPaths from '../../imports/svg-c3y431orpb';
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import Swal from 'sweetalert2';
 
 export function SignUp() {
   const [showPassword, setShowPassword] = useState(false);
@@ -11,6 +12,7 @@ export function SignUp() {
     email: '',
     phone: '',
     dateOfBirth: '',
+    gender: '',
     identificationNumber: '',
     password: '',
     confirmPassword: ''
@@ -20,10 +22,30 @@ export function SignUp() {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleCreateAccount = (e: React.FormEvent) => {
+  const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle sign up logic here
-    console.log('Create account:', formData);
+    if (formData.password !== formData.confirmPassword) {
+      Swal.fire({ icon: 'warning', title: 'Passwords do not match', text: 'Please make sure both passwords are the same.', confirmButtonColor: '#1E88E5' });
+
+      return;
+    }
+    try {
+      const signUpData = {
+        fullName: formData.fullName,
+        email: formData.email,
+        phone: formData.phone || undefined,
+        dateOfBirth: formData.dateOfBirth || undefined,
+        gender: formData.gender || undefined,
+        identificationNumber: formData.identificationNumber || undefined,
+        password: formData.password,
+      };
+      const result = await import('../../api/auth').then(m => m.signUp(signUpData));
+      import('../../api/auth').then(m => m.saveSession(result.token, result.user));
+      // after signup, go to select date/department to start booking
+      window.location.href = '/app/select-date';
+    } catch (err: any) {
+      Swal.fire({ icon: 'error', title: 'Registration Failed', text: err.message || 'Failed to create account', confirmButtonColor: '#1E88E5' });
+    }
   };
 
   return (
@@ -164,6 +186,25 @@ export function SignUp() {
                   onChange={(e) => handleInputChange('phone', e.target.value)}
                   className="w-full h-12 pl-10 pr-3 bg-[#f3f3f5] border border-[#d1d5dc] rounded-[10px] text-[14px] placeholder:text-[#717182] focus:outline-none focus:ring-2 focus:ring-[#1e88e5] focus:border-transparent"
                 />
+              </div>
+            </div>
+
+            {/* Gender */}
+            <div>
+              <label className="block font-medium text-[14px] leading-[14px] text-[#364153] mb-2">
+                เพศ (Gender)
+              </label>
+              <div className="relative">
+                <select
+                  value={formData.gender}
+                  onChange={(e) => handleInputChange('gender', e.target.value)}
+                  className="w-full h-12 pl-10 pr-3 bg-[#f3f3f5] border border-[#d1d5dc] rounded-[10px] text-[14px] text-[#364153] focus:outline-none focus:ring-2 focus:ring-[#1e88e5] focus:border-transparent"
+                >
+                  <option value="">— เลือกเพศ —</option>
+                  <option value="male">ชาย (Male)</option>
+                  <option value="female">หญิง (Female)</option>
+                  <option value="other">อื่นๆ (Other)</option>
+                </select>
               </div>
             </div>
 

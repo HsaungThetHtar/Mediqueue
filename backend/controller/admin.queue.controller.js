@@ -1,54 +1,186 @@
-const queues = require("../mock/queues");
+const Booking = require("../models/Booking");
+const Doctor = require("../models/Doctor");
+const CheckIn = require("../models/CheckIn");
+const Notification = require("../models/Notification");
 
-// GET /admin/queues
-exports.getQueues = function (req, res) {
-  res.json(queues);
+const populateDoctorAndDepartment = (q) =>
+  q.populate({ path: "doctor", select: "name department", populate: { path: "department", select: "name" } }).populate("department", "name");
+
+// GET /admin/queues/:id — ดึง booking เดียว (สำหรับหน้า details)
+exports.getQueueById = async function (req, res) {
+  try {
+    const booking = await populateDoctorAndDepartment(
+      Booking.findById(req.params.id).populate("patientId", "fullName email phone dateOfBirth")
+    );
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
+    res.json(booking);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// GET /admin/queues?date=YYYY-MM-DD&timeSlot=morning
+exports.getQueues = async function (req, res) {
+  try {
+    const filter = {};
+    if (req.query.date) filter.date = req.query.date;
+    if (req.query.timeSlot) filter.timeSlot = req.query.timeSlot;
+    if (req.query.status) filter.status = req.query.status;
+    if (req.query.doctor) filter.doctor = req.query.doctor;
+
+    const queues = await populateDoctorAndDepartment(
+      Booking.find(filter).populate("patientId", "fullName dateOfBirth gender").sort({ createdAt: 1 })
+    );
+
+    res.json(queues);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 };
 
 // POST /admin/queues/:id/call
-exports.callQueue = function (req, res) {
-  const id = Number(req.params.id);
-  const queue = queues.find(q => q.id === id);
+exports.callQueue = async function (req, res) {
+  try {
+    const booking = await populateDoctorAndDepartment(
+      Booking.findByIdAndUpdate(req.params.id, { status: "in-progress" }, { new: true })
+    );
 
-  if (!queue) {
-    return res.status(404).json({ message: "Queue not found" });
+    if (!booking) return res.status(404).json({ message: "Queue not found" });
+
+    await Doctor.findByIdAndUpdate(booking.doctor._id, {
+      currentQueueServing: booking.queueNumber,
+    });
+
+    const io = req.app.get("io");
+    io.emit("queue-update", { type: "called", booking });
+
+    console.log("[NOTI] Called:", booking.patientName, "-", booking.queueNumber);
+    res.json(booking);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
-
-  queue.status = "called";
-  queue.doctorId = req.user.username;
-
-  // notification mock
-  console.log("[NOTI] Called:", queue.patientName);
-
-  res.json(queue);
 };
 
 // POST /admin/queues/:id/skip
-exports.skipQueue = function (req, res) {
-  const id = Number(req.params.id);
-  const queue = queues.find(q => q.id === id);
+exports.skipQueue = async function (req, res) {
+  try {
+    const booking = await populateDoctorAndDepartment(
+      Booking.findByIdAndUpdate(req.params.id, { status: "canceled" }, { new: true })
+    );
 
-  if (!queue) {
-    return res.status(404).json({ message: "Queue not found" });
+    if (!booking) return res.status(404).json({ message: "Queue not found" });
+
+    const nextBooking = await Booking.findOneAndUpdate(
+      {
+        doctor: booking.doctor._id,
+        date: booking.date,
+        timeSlot: booking.timeSlot,
+        status: "waiting",
+      },
+      { status: "in-progress" },
+      { new: true, sort: { createdAt: 1 } }
+    );
+
+    const io = req.app.get("io");
+    io.emit("queue-update", { type: "skipped", booking, nextBooking: nextBooking || null });
+
+    if (nextBooking) {
+      console.log("[NOTI] Auto call:", nextBooking.patientName, "-", nextBooking.queueNumber);
+    }
+
+    res.json({ skippedQueue: booking, nextQueue: nextBooking || null });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
+};
 
-  queue.status = "skipped";
-  queue.doctorId = req.user.username;
+// POST /admin/queues/:id/complete
+exports.completeQueue = async function (req, res) {
+  try {
+    const booking = await populateDoctorAndDepartment(
+      Booking.findByIdAndUpdate(req.params.id, { status: "completed" }, { new: true })
+    );
 
-  // หา waiting ถัดไป (session เดียวกัน)
-  const nextQueue = queues.find(
-    q => q.status === "waiting" && q.session === queue.session
-  );
+    if (!booking) return res.status(404).json({ message: "Queue not found" });
 
-  if (nextQueue) {
-    nextQueue.status = "called";
-    nextQueue.doctorId = req.user.username;
+    const io = req.app.get("io");
+    io.emit("queue-update", { type: "completed", booking });
 
-    console.log("[NOTI] Auto call:", nextQueue.patientName);
+    res.json(booking);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
+};
 
-  res.json({
-    skippedQueue: queue,
-    nextQueue: nextQueue || null,
-  });
+// PATCH /admin/queues/:id/status — admin update booking status (for Edit Status modal)
+const ALLOWED_STATUSES = ["waiting", "checked-in", "confirmed", "in-progress", "completed", "canceled"];
+exports.updateQueueStatus = async function (req, res) {
+  try {
+    const { status } = req.body || {};
+    if (!status || !ALLOWED_STATUSES.includes(status)) {
+      return res.status(400).json({ message: "Valid status required: " + ALLOWED_STATUSES.join(", ") });
+    }
+    const booking = await populateDoctorAndDepartment(
+      Booking.findByIdAndUpdate(req.params.id, { status }, { new: true })
+    );
+    if (!booking) return res.status(404).json({ message: "Queue not found" });
+
+    const io = req.app.get("io");
+    io.emit("queue-update", { type: "status", booking });
+    res.json(booking);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// POST /admin/queues/:id/checkin (manual check-in by staff/admin)
+exports.manualCheckIn = async function (req, res) {
+  try {
+    if (!req.user || req.user.role !== "admin") {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+
+    const bookingId = req.params.id;
+    const { notes } = req.body || {};
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    if (!booking.patientId) {
+      return res.status(400).json({ message: "Booking has no patient bound" });
+    }
+
+    if (booking.status !== "waiting") {
+      return res
+        .status(400)
+        .json({ message: "Only waiting bookings can be checked-in manually" });
+    }
+
+    const checkIn = await CheckIn.create({
+      bookingId: booking._id,
+      patientId: booking.patientId,
+      method: "manual",
+      notes,
+      status: "confirmed",
+    });
+
+    await Booking.findByIdAndUpdate(bookingId, { status: "checked-in" });
+
+    await Notification.create({
+      userId: booking.patientId,
+      title: "Check-in Confirmed by Staff",
+      message: `Staff has checked you in for your appointment with ${booking.doctorName}.`,
+      type: "status",
+      relatedBookingId: bookingId,
+    });
+
+    const io = req.app.get("io");
+    io.emit("checkin-update", { bookingId, status: "checked-in" });
+
+    res.status(201).json(checkIn);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 };
