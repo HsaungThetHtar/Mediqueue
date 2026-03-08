@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Clock, Users, ChevronLeft, LogOut, Zap } from 'lucide-react';
+import { Activity, Clock, Users, ChevronLeft, LogOut, Zap, LayoutDashboard } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { useNavigate, useOutletContext } from 'react-router';
 import { io } from 'socket.io-client';
@@ -114,6 +114,10 @@ export function SelectedDoctor() {
     navigate('/signin');
   };
 
+  const handleDashboard = () => {
+    navigate('/dashboard');
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', {
@@ -139,13 +143,22 @@ export function SelectedDoctor() {
               <Activity className="w-6 h-6" />
               <span className="text-xl font-bold tracking-tight">MediQueue</span>
             </div>
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-2xl font-bold text-[14px] transition-all bg-white text-[#df4759] border-2 border-[#df4759] hover:bg-red-50 active:scale-95"
-            >
-              <LogOut className="w-5 h-5" />
-              Logout
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleDashboard}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-2xl font-bold text-[14px] transition-all bg-white text-[#1E88E5] border-2 border-[#1E88E5] hover:bg-blue-50 active:scale-95"
+              >
+                <LayoutDashboard className="w-5 h-5" />
+                Dashboard
+              </button>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-2xl font-bold text-[14px] transition-all bg-white text-[#df4759] border-2 border-[#df4759] hover:bg-red-50 active:scale-95"
+              >
+                <LogOut className="w-5 h-5" />
+                Logout
+              </button>
+            </div>
           </div>
           <h1 className="text-[32px] md:text-[40px] font-bold text-gray-900 leading-tight">Select a Doctor</h1>
           <p className="text-gray-500 text-lg mt-2 font-medium">Choose your preferred doctor to continue with queue booking</p>

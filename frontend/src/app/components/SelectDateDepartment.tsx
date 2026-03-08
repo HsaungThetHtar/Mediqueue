@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Activity, Calendar, Building2, LogOut, ChevronDown, Check } from 'lucide-react';
+import { Activity, Calendar, Building2, LogOut, ChevronDown, Check, LayoutDashboard } from 'lucide-react';
 import { useNavigate, useOutletContext } from 'react-router';
 import { getDepartments } from '../../api/departments';
 
@@ -68,6 +68,10 @@ export function SelectDateDepartment() {
     navigate('/signin');
   };
 
+  const handleDashboard = () => {
+    navigate('/dashboard');
+  };
+
   // Get today's date in YYYY-MM-DD format
   const getTodayDate = () => {
     const today = new Date();
@@ -93,13 +97,22 @@ export function SelectDateDepartment() {
               <Activity className="w-5 h-5 shrink-0" />
               <span className="font-medium truncate">MediQueue</span>
             </div>
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl font-medium text-sm transition-colors bg-white text-[#D32F2F] border-2 border-[#D32F2F] hover:bg-red-50 shrink-0"
-            >
-              <LogOut className="w-4 h-4 shrink-0" />
-              <span>Logout</span>
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleDashboard}
+                className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl font-medium text-sm transition-colors bg-white text-[#1E88E5] border-2 border-[#1E88E5] hover:bg-blue-50"
+              >
+                <LayoutDashboard className="w-4 h-4 shrink-0" />
+                <span>Dashboard</span>
+              </button>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl font-medium text-sm transition-colors bg-white text-[#D32F2F] border-2 border-[#D32F2F] hover:bg-red-50"
+              >
+                <LogOut className="w-4 h-4 shrink-0" />
+                <span>Logout</span>
+              </button>
+            </div>
           </div>
           <div className="mt-8 sm:mt-10 md:mt-16">
             <h1 className="text-xl sm:text-2xl md:text-3xl font-semibold text-gray-900">
