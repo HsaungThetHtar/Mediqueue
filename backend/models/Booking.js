@@ -14,14 +14,20 @@ const bookingSchema = new mongoose.Schema({
   patientName: { type: String },
   status: {
     type: String,
-    // FIX #1: Added "skipped" to enum (was missing — skipQueue was storing "canceled" instead)
-    enum: ["waiting", "checked-in", "confirmed", "in-progress", "completed", "canceled", "skipped"],
+    enum: ["waiting", "checked-in", "confirmed", "called", "in-progress", "completed", "canceled", "skipped"],
     default: "waiting",
   },
-  /** Set when status is set to in-progress (queue called); used for auto-skip after 10 min */
+  /** Set when status is set to "called"; used for auto-skip after 10 min of no response */
   calledAt: { type: Date },
+  /** Set when status becomes "skipped"; used for auto-cancel after another 10 min if no re-check-in */
+  skippedAt: { type: Date },
+  /** Set when booking is canceled */
+  cancelledAt: { type: Date },
   doctorNotes: { type: String, default: "" },
   createdAt: { type: Date, default: Date.now },
 });
+
+bookingSchema.index({ doctor: 1, date: 1, timeSlot: 1, status: 1 });
+bookingSchema.index({ patientId: 1 });
 
 module.exports = mongoose.model("Booking", bookingSchema);

@@ -1,3 +1,6 @@
+// BUG-11 FIX: Moved jwt require to top of file (was placed mid-file after requireRole)
+const jwt = require("jsonwebtoken");
+
 /**
  * ใช้หลัง auth เท่านั้น — ตรวจว่า req.user.role อยู่ในรายการที่อนุญาต
  * @param {...string} roles - เช่น requireRole('admin') หรือ requireRole('admin', 'doctor')
@@ -14,8 +17,6 @@ function requireRole(...roles) {
     next();
   };
 }
-
-const jwt = require("jsonwebtoken");
 
 /**
  * ถ้ามี Authorization header จะ verify และเซ็ต req.user ถ้าไม่มี req.user จะไม่ถูกเซ็ต (ไม่ error)

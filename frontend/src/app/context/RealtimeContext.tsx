@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
-import { getSession } from "../../api/auth";
+import { getSession, getToken } from "../../api/auth";
 import { BASE_URL } from "../../api/client";
 
 const RealtimeContext = createContext<Socket | null>(null);
@@ -29,7 +29,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         socketRef.current.disconnect();
         socketRef.current = null;
       }
-      const s = io(BASE_URL, { transports: ["websocket", "polling"] });
+      const token = getToken();
+      const s = io(BASE_URL, { transports: ["websocket", "polling"], auth: { token } });
       socketRef.current = s;
       setSocket(s);
       s.on("disconnect", () => {

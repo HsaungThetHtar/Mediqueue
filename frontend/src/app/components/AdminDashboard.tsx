@@ -43,7 +43,7 @@ interface Queue {
   checkInTime: string;
   date?: string;
   createdAt?: string;
-  status: 'waiting' | 'in-progress' | 'completed' | 'skipped' | 'checked-in' | 'confirmed' | 'canceled';
+  status: 'waiting' | 'called' | 'in-progress' | 'completed' | 'skipped' | 'checked-in' | 'confirmed' | 'canceled';
   timeSlot?: 'morning' | 'afternoon';
 }
 
@@ -87,6 +87,7 @@ export function AdminDashboard() {
         checkInTime: new Date(q.createdAt).toLocaleTimeString(),
         date: q.date,
         createdAt: q.createdAt,
+        skippedAt: (q as any).skippedAt ?? null,
         status: q.status as any,
         timeSlot: q.timeSlot,
       }));
@@ -114,10 +115,12 @@ export function AdminDashboard() {
 
   useEffect(() => {
     const session = getSession();
-    if (session) {
-      setUserEmail(session.email);
-      setUserName(session.fullName);
+    if (!session || session.role !== 'admin') {
+      navigate('/signin', { replace: true });
+      return;
     }
+    setUserEmail(session.email);
+    setUserName(session.fullName);
   }, []);
 
   useRealtimeEvent('queue-update', () => refresh());
@@ -131,6 +134,7 @@ export function AdminDashboard() {
   const getStatusBadge = (status: Queue['status']) => {
     const styles: Record<string, string> = {
       waiting: 'bg-[#fff8e1] text-[#ff9800] border-[#ffe082]',
+      called: 'bg-[#fff3e0] text-[#e65100] border-[#ffcc80]',
       'in-progress': 'bg-[#f3e5f5] text-[#9c27b0] border-[#d1c4e9]',
       completed: 'bg-[#e8f5e9] text-[#4caf50] border-[#a5d6a7]',
       skipped: 'bg-[#ffebee] text-[#f44336] border-[#ef9a9a]',
@@ -140,6 +144,7 @@ export function AdminDashboard() {
     };
     const labels: Record<string, string> = {
       waiting: 'Waiting',
+      called: 'Called',
       'in-progress': 'In Progress',
       completed: 'Completed',
       skipped: 'Skipped',

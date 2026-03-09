@@ -1,114 +1,129 @@
 /**
- * Auto-skip queue: if a patient was called (in-progress) and calledAt was more than 10 minutes ago,
- * mark that booking as canceled and call the next waiting patient.
- * Run this job periodically (e.g. every 1 minute) after server start.
+ * Auto-cancel job:
+ *
+ * Admin manually skips a queue → status = "skipped" → skippedAt is recorded.
+ * Patient has 10 minutes to re-check-in at the counter.
+ * If no re-check-in within 10 min → status = "canceled" + slot released.
+ *
+ * Note: "in-progress" has NO auto-timeout. Only admin can trigger skip.
  */
 const Booking = require("../models/Booking");
 const Doctor = require("../models/Doctor");
 const Notification = require("../models/Notification");
+const QueueEvent = require("../models/QueueEvent");
 
-const MINUTES_BEFORE_AUTO_SKIP = 10;
-const JOB_INTERVAL_MS = 60 * 1000; // 1 minute
+async function logQueueEvent({ bookingId, action, performedByRole, queueNumber, notes }) {
+  try { await QueueEvent.create({ bookingId, action, performedByRole: performedByRole || "system", queueNumber, notes }); }
+  catch (err) { console.error("[QueueEvent/auto] Failed to log:", err.message); }
+}
+
+const MINUTES_BEFORE_AUTO_CANCEL = 10;
+const JOB_INTERVAL_MS = 60 * 1000; // run every 1 minute
 
 const populateDoctorAndDepartment = (q) =>
   q.populate({ path: "doctor", select: "name department", populate: { path: "department", select: "name" } }).populate("department", "name");
 
-async function runAutoSkip(io) {
+// called → skipped after 10 min with no QR check-in
+async function runAutoSkipCalled(io) {
   if (!io) return;
-  const cutoff = new Date(Date.now() - MINUTES_BEFORE_AUTO_SKIP * 60 * 1000);
-  const stale = await Booking.find({
-    status: "in-progress",
+  const cutoff = new Date(Date.now() - MINUTES_BEFORE_AUTO_CANCEL * 60 * 1000);
+  const staleCalled = await Booking.find({
+    status: "called",
     calledAt: { $exists: true, $lte: cutoff },
   }).lean();
 
-  for (const b of stale) {
+  for (const b of staleCalled) {
     try {
-      const booking = await populateDoctorAndDepartment(
-        Booking.findByIdAndUpdate(b._id, { status: "canceled" }, { new: true })
-      );
+      const booking = await Booking.findByIdAndUpdate(
+        b._id,
+        { status: "skipped", skippedAt: new Date() },
+        { returnDocument: 'after' }
+      ).lean();
       if (!booking) continue;
 
-      let nextBooking = await Booking.findOneAndUpdate(
-        {
-          doctor: booking.doctor._id,
-          date: booking.date,
-          timeSlot: booking.timeSlot,
-          status: "waiting",
-        },
-        { status: "in-progress", calledAt: new Date() },
-        { new: true, sort: { createdAt: 1 } }
-      );
-      if (nextBooking) nextBooking = await populateDoctorAndDepartment(Booking.findById(nextBooking._id)).exec();
+      await logQueueEvent({ bookingId: booking._id, action: "SKIP", performedByRole: "system", queueNumber: booking.queueNumber, notes: "auto-skipped: no check-in within 10 min of call" });
 
-      const queueNumberToInt = (q) => {
-        const parts = String(q || "").split("-");
-        return parts.length === 2 ? parseInt(parts[1], 10) || 0 : 0;
-      };
-      await Doctor.findByIdAndUpdate(booking.doctor._id, {
-        currentQueueServing: nextBooking ? queueNumberToInt(nextBooking.queueNumber) : 0,
-      });
-
-      const skippedNotif = await Notification.create({
+      const notif = await Notification.create({
         userId: booking.patientId,
-        title: "Queue Skipped",
-        message: "Your queue was skipped because there was no response within 10 minutes. Please check in again if you still need to see the doctor.",
+        title: "Your Queue Was Auto-Skipped",
+        message: `Your queue ${booking.queueNumber} was skipped because you did not check in within 10 minutes. You have 10 more minutes to re-check-in.`,
         type: "status",
         relatedBookingId: booking._id,
       });
 
-      io.emit("queue-update", { type: "skipped", booking, nextBooking: nextBooking || null });
-      io.emit("notification", {
-        userId: String(booking.patientId),
-        notification: {
-          _id: skippedNotif._id,
-          title: skippedNotif.title,
-          message: skippedNotif.message,
-          type: "status",
-          relatedBookingId: booking._id,
-          isRead: false,
-          createdAt: skippedNotif.createdAt,
-        },
-      });
+      io.to("role:admin").to("role:doctor").emit("queue-update", { type: "skipped", booking: { _id: booking._id, queueNumber: booking.queueNumber, status: "skipped" } });
+      io.to(`user:${booking.patientId}`).emit("booking-update", { bookingId: booking._id, status: "skipped" });
+      io.to(`user:${booking.patientId}`).emit("notification", { userId: String(booking.patientId), notification: { _id: notif._id, title: notif.title, message: notif.message, type: "status", relatedBookingId: booking._id, isRead: false, createdAt: notif.createdAt } });
 
-      if (nextBooking) {
-        const notifDoc = await Notification.create({
-          userId: nextBooking.patientId,
-          title: "Your Queue is Called!",
-          message: "Please proceed to the consultation room immediately.",
-          type: "status",
-          relatedBookingId: nextBooking._id,
-        });
-        const departmentName = nextBooking.department?.name || "";
-        io.emit("queue-update", { type: "called", booking: nextBooking });
-        io.emit("notification", {
-          userId: String(nextBooking.patientId),
-          notification: {
-            _id: notifDoc._id,
-            title: notifDoc.title,
-            message: notifDoc.message,
-            type: "status",
-            relatedBookingId: nextBooking._id,
-            isRead: false,
-            createdAt: notifDoc.createdAt,
-            queueNumber: nextBooking.queueNumber,
-            doctorName: nextBooking.doctorName,
-            departmentName,
-          },
-        });
-        console.log("[AUTO-SKIP] Skipped:", booking.patientName, "-", booking.queueNumber, "| Next:", nextBooking.patientName, "-", nextBooking.queueNumber);
-      } else {
-        console.log("[AUTO-SKIP] Skipped:", booking.patientName, "-", booking.queueNumber, "| No next queue");
-      }
+      console.log("[AUTO-SKIP] Skipped called booking:", booking.patientName || booking.patientId, "-", booking.queueNumber);
     } catch (err) {
       console.error("[AUTO-SKIP] Error for booking", b._id, err.message);
     }
   }
 }
 
+// skipped → canceled after 10 min with no re-check-in
+async function runAutoCancel(io) {
+  if (!io) return;
+  const cutoff = new Date(Date.now() - MINUTES_BEFORE_AUTO_CANCEL * 60 * 1000);
+
+  const stale = await Booking.find({
+    status: "skipped",
+    skippedAt: { $exists: true, $lte: cutoff },
+  }).lean();
+
+  for (const b of stale) {
+    try {
+      const booking = await populateDoctorAndDepartment(
+        Booking.findByIdAndUpdate(b._id, { status: "canceled" }, { returnDocument: 'after' })
+      );
+      if (!booking) continue;
+
+      // Release the slot
+      const doctor = await Doctor.findById(booking.doctor._id);
+      if (doctor && doctor.currentQueue > 0) {
+        doctor.currentQueue = doctor.currentQueue - 1;
+        await doctor.save();
+      }
+
+      const notif = await Notification.create({
+        userId: booking.patientId,
+        title: "Queue Canceled",
+        message: `Your queue ${booking.queueNumber} has been automatically canceled. No re-check-in was received within 10 minutes.`,
+        type: "status",
+        relatedBookingId: booking._id,
+      });
+
+      io.to("role:admin").to("role:doctor").emit("queue-update", { type: "canceled", booking: { _id: booking._id, queueNumber: booking.queueNumber, status: booking.status } });
+      io.to(`user:${booking.patientId}`).emit("booking-update", { bookingId: booking._id, status: "canceled" });
+      io.to(`user:${booking.patientId}`).emit("notification", {
+        userId: String(booking.patientId),
+        notification: {
+          _id: notif._id,
+          title: notif.title,
+          message: notif.message,
+          type: "status",
+          relatedBookingId: booking._id,
+          isRead: false,
+          createdAt: notif.createdAt,
+        },
+      });
+
+      console.log("[AUTO-CANCEL] Canceled skipped booking:", booking.patientName, "-", booking.queueNumber);
+    } catch (err) {
+      console.error("[AUTO-CANCEL] Error for booking", b._id, err.message);
+    }
+  }
+}
+
 function startAutoSkipJob(io) {
-  runAutoSkip(io);
-  const interval = setInterval(() => runAutoSkip(io), JOB_INTERVAL_MS);
+  runAutoSkipCalled(io);
+  runAutoCancel(io);
+  const interval = setInterval(() => {
+    runAutoSkipCalled(io);
+    runAutoCancel(io);
+  }, JOB_INTERVAL_MS);
   return () => clearInterval(interval);
 }
 
-module.exports = { runAutoSkip, startAutoSkipJob, MINUTES_BEFORE_AUTO_SKIP };
+module.exports = { runAutoCancel, startAutoSkipJob, MINUTES_BEFORE_AUTO_CANCEL };

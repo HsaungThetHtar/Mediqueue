@@ -1,18 +1,21 @@
 const Booking = require("../models/Booking");
 const Doctor = require("../models/Doctor");
+const SiteConfig = require("../models/SiteConfig");
 const { calculateETA } = require("../utils/eta");
 
-// Generate queue number: M-001 (morning) or A-001 (afternoon)
+// C2 FIX: Generate queue number from the last existing number (safer than countDocuments)
+// Note: unique index on {doctor,date,timeSlot,queueNumber} in Booking model prevents duplicates at DB level
 async function generateQueueNumber(doctorId, date, timeSlot) {
   const prefix = timeSlot === "morning" ? "M" : "A";
-  const count = await Booking.countDocuments({
-    doctor: doctorId,
-    date,
-    timeSlot,
-    status: { $ne: "canceled" },
-  });
-  const num = String(count + 1).padStart(3, "0");
-  return `${prefix}-${num}`;
+  const last = await Booking.findOne(
+    { doctor: doctorId, date, timeSlot },
+    "queueNumber",
+    { sort: { createdAt: -1 } }
+  ).lean();
+  const num = last?.queueNumber
+    ? (parseInt((last.queueNumber.split("-")[1] || "0"), 10) || 0) + 1
+    : 1;
+  return `${prefix}-${String(num).padStart(3, "0")}`;
 }
 
 // POST /bookings
@@ -38,7 +41,11 @@ exports.createBooking = async function (req, res) {
       status: { $ne: "canceled" },
     });
 
-    if (existingCount >= 15) {
+    // C1 FIX: Use configurable queuePerSession from SiteConfig instead of hardcoded 15
+    const siteConfig = await SiteConfig.findOne({}).lean();
+    const sessionLimit = siteConfig?.queuePerSession || 15;
+
+    if (existingCount >= sessionLimit) {
       return res.status(409).json({ message: "This session is full" });
     }
 
@@ -65,11 +72,15 @@ exports.createBooking = async function (req, res) {
     });
     await booking.populate("department", "name");
 
-    doctor.currentQueue = doctor.currentQueue + 1;
-    await doctor.save();
+    // C3 FIX: Use atomic $inc to prevent race conditions on concurrent bookings
+    const updatedDoctor = await Doctor.findByIdAndUpdate(
+      doctorId,
+      { $inc: { currentQueue: 1 } },
+      { returnDocument: 'after' }
+    );
 
     const io = req.app.get("io");
-    io.emit("doctor-update", doctor.toObject());
+    if (io && updatedDoctor) io.emit("doctor-update", updatedDoctor.toObject());
 
     res.status(201).json({
       ...booking.toObject(),
@@ -200,7 +211,10 @@ exports.updateBooking = async function (req, res) {
       status: { $ne: "canceled" },
       _id: { $ne: booking._id },
     });
-    if (newSlotCount >= 15) {
+    // C1 FIX: Use configurable limit from SiteConfig
+    const siteConfigForUpdate = await SiteConfig.findOne({}).lean();
+    const sessionLimitForUpdate = siteConfigForUpdate?.queuePerSession || 15;
+    if (newSlotCount >= sessionLimitForUpdate) {
       return res.status(409).json({ message: "This session is full" });
     }
 
@@ -231,10 +245,14 @@ exports.updateBooking = async function (req, res) {
     await booking.save();
 
     if (doctorChanged) {
-      doctor.currentQueue = (doctor.currentQueue || 0) + 1;
-      await doctor.save();
+      // C3 FIX: Use atomic $inc for new doctor
+      const updatedNewDoctor = await Doctor.findByIdAndUpdate(
+        newDoctorId,
+        { $inc: { currentQueue: 1 } },
+        { returnDocument: 'after' }
+      );
       const io = req.app.get("io");
-      if (io) io.emit("doctor-update", doctor.toObject());
+      if (io && updatedNewDoctor) io.emit("doctor-update", updatedNewDoctor.toObject());
     }
 
     await booking.populate("department", "name");
@@ -280,17 +298,18 @@ exports.cancelBooking = async function (req, res) {
 
     const booking = await Booking.findByIdAndUpdate(
       req.params.id,
-      { status: "canceled" },
-      { new: true }
+      { status: "canceled", cancelledAt: new Date() },
+      { returnDocument: 'after' }
     ).populate("department", "name");
 
-    const doctor = await Doctor.findById(booking.doctor);
-    if (doctor && doctor.currentQueue > 0) {
-      doctor.currentQueue = doctor.currentQueue - 1;
-      await doctor.save();
-      const io = req.app.get("io");
-      io.emit("doctor-update", doctor.toObject());
-    }
+    // C3 FIX: Use atomic $inc (decrement), H4 FIX: null-check io
+    const updatedCancelDoctor = await Doctor.findOneAndUpdate(
+      { _id: booking.doctor, currentQueue: { $gt: 0 } },
+      { $inc: { currentQueue: -1 } },
+      { returnDocument: 'after' }
+    );
+    const io = req.app.get("io");
+    if (io && updatedCancelDoctor) io.emit("doctor-update", updatedCancelDoctor.toObject());
 
     res.json(booking);
   } catch (err) {

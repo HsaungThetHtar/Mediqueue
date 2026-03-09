@@ -14,20 +14,63 @@ export interface BookingData {
   currentlyServing: string;
 }
 
+// Persist booking flow state in sessionStorage so refresh doesn't lose data
+const SESSION_KEY = 'mediqueue_booking_flow';
+
+function loadFlowState() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return { dateAndDepartment: null, selectedDoctor: null, bookingData: null };
+    return JSON.parse(raw);
+  } catch {
+    return { dateAndDepartment: null, selectedDoctor: null, bookingData: null };
+  }
+}
+
+function saveFlowState(state: { dateAndDepartment: DateDepartmentSelection | null; selectedDoctor: Doctor | null; bookingData: BookingData | null }) {
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(state));
+  } catch {}
+}
+
 export default function MainApp() {
-  const [dateAndDepartment, setDateAndDepartment] = useState<DateDepartmentSelection | null>(null);
-  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
-  const [bookingData, setBookingData] = useState<BookingData | null>(null);
+  const saved = loadFlowState();
+  const [dateAndDepartment, setDateAndDepartment] = useState<DateDepartmentSelection | null>(saved.dateAndDepartment);
+  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(saved.selectedDoctor);
+  const [bookingData, setBookingData] = useState<BookingData | null>(saved.bookingData);
 
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Save to sessionStorage whenever state changes
   useEffect(() => {
-    // Redirect to select-date if at root /app
-    if (location.pathname === '/app' || location.pathname === '/app/') {
+    saveFlowState({ dateAndDepartment, selectedDoctor, bookingData });
+  }, [dateAndDepartment, selectedDoctor, bookingData]);
+
+  // Guard: redirect back to the correct step if state is missing on refresh
+  useEffect(() => {
+    const path = location.pathname;
+
+    if (path === '/app' || path === '/app/') {
       navigate('/app/select-date', { replace: true });
+      return;
     }
-  }, [location.pathname, navigate]);
+    // select-doctor needs dateAndDepartment
+    if (path === '/app/select-doctor' && !dateAndDepartment) {
+      navigate('/app/select-date', { replace: true });
+      return;
+    }
+    // booking needs selectedDoctor
+    if (path === '/app/booking' && !selectedDoctor) {
+      navigate('/app/select-date', { replace: true });
+      return;
+    }
+    // slip needs bookingData
+    if (path === '/app/slip' && !bookingData) {
+      navigate('/app/select-date', { replace: true });
+      return;
+    }
+  }, [location.pathname, dateAndDepartment, selectedDoctor, bookingData, navigate]);
 
   const handleDateDepartmentSelection = (selection: DateDepartmentSelection) => {
     setDateAndDepartment(selection);
@@ -61,6 +104,7 @@ export default function MainApp() {
     setBookingData(null);
     setSelectedDoctor(null);
     setDateAndDepartment(null);
+    sessionStorage.removeItem(SESSION_KEY);
     navigate('/dashboard');
   };
 

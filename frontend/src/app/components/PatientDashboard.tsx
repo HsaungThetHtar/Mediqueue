@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router';
-import { Calendar, Clock, MapPin, User, Plus, Eye, X, AlertCircle, CheckCircle, Clock3, Building2, LogOut, Bell } from 'lucide-react';
+import { Calendar, Clock, MapPin, User, Plus, Eye, X, AlertCircle, CheckCircle, Clock3, Building2, LogOut, Bell, FileText } from 'lucide-react';
 import { getSession, clearSession } from '../../api/auth';
 import { getDepartmentName } from '../../utils/department';
 import { useRealtimeEvent } from '../context/RealtimeContext';
+import type { BookingData } from '../MainApp';
+
+const FLOW_SESSION_KEY = 'mediqueue_booking_flow';
 
 interface Booking {
   id: string;
@@ -11,10 +14,14 @@ interface Booking {
   hospital: string;
   department: string;
   doctor: string;
+  doctorName: string;
   date: string;
   time: string;
-  status: 'upcoming' | 'checked-in' | 'in-progress' | 'completed' | 'cancelled';
+  estimatedTime: string;
+  status: 'upcoming' | 'checked-in' | 'in-progress' | 'skipped' | 'completed' | 'cancelled';
   estimatedWaitTime: number;
+  currentlyServing: string;
+  rawBooking?: any;
 }
 
 interface PatientDashboardProps { }
@@ -26,36 +33,62 @@ export function PatientDashboard({ }: PatientDashboardProps) {
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const navigate = useNavigate();
 
+  // Role guard — runs once on mount only
+  useEffect(() => {
+    const user = getSession();
+    if (!user) {
+      clearSession();
+      navigate('/signin', { replace: true });
+      return;
+    }
+    if (user.role !== 'patient') {
+      navigate('/signin', { replace: true });
+      return;
+    }
+    setPatientName(user.fullName);
+  }, [navigate]);
+
   const loadBookings = useCallback(async () => {
     try {
       const user = getSession();
-      if (!user) {
-        clearSession();
-        navigate('/signin');
-        return;
-      }
-      setPatientName(user.fullName);
+      if (!user) return;
       const data = await import('../../api/bookings').then(m => m.getMyBookings(user.id));
       const statusMap: Record<string, Booking['status']> = {
         waiting: 'upcoming',
         confirmed: 'upcoming',
+        called: 'upcoming',
         'checked-in': 'checked-in',
         'in-progress': 'in-progress',
         completed: 'completed',
         canceled: 'cancelled',
-        cancelled: 'cancelled',
+        skipped: 'skipped',
       };
-      const ui: Booking[] = data.map(b => ({
-        id: b._id,
-        queueNumber: b.queueNumber,
-        hospital: b.hospital,
-        department: getDepartmentName((b as any).department),
-        doctor: b.doctorName,
-        date: b.date,
-        time: b.timeSlot === 'morning' ? 'Morning' : 'Afternoon',
-        status: statusMap[b.status] || 'upcoming',
-        estimatedWaitTime: (b as any).queueStatus?.estimatedWaitMinutes ?? 0,
-      }));
+      const ui: Booking[] = data.map(b => {
+        // department may be populated object {name: "..."} or a string/ObjectId
+        const rawDept = (b as any).department;
+        const deptDisplay = rawDept && typeof rawDept === 'object' && rawDept.name
+          ? rawDept.name
+          : getDepartmentName(rawDept);
+
+        // doctorName may be on b.doctorName or b.doctor (if not populated)
+        const doctorDisplay = b.doctorName || (typeof (b as any).doctor === 'string' ? (b as any).doctor : '');
+
+        return {
+          id: b._id,
+          queueNumber: b.queueNumber,
+          hospital: b.hospital,
+          department: deptDisplay,
+          doctor: doctorDisplay,
+          doctorName: doctorDisplay,
+          date: b.date,
+          time: b.timeSlot === 'morning' ? 'Morning' : 'Afternoon',
+          estimatedTime: b.estimatedTime || '',
+          status: statusMap[b.status] || 'upcoming',
+          estimatedWaitTime: (b as any).queueStatus?.estimatedWaitMinutes ?? 0,
+          currentlyServing: b.currentlyServing || `${(b.queueNumber || 'Q').split('-')[0]}-000`,
+          rawBooking: b,
+        };
+      });
       setBookings(ui);
     } catch (err) {
       console.error('failed load bookings', err);
@@ -90,16 +123,16 @@ export function PatientDashboard({ }: PatientDashboardProps) {
       'in-progress': 'bg-purple-100 text-purple-700',
       completed: 'bg-green-100 text-green-700',
       cancelled: 'bg-red-100 text-red-700',
+      skipped: 'bg-orange-100 text-orange-700',
     };
-
     const labels = {
       upcoming: 'Upcoming',
       'checked-in': 'Checked In',
       'in-progress': 'In Progress',
       completed: 'Completed',
       cancelled: 'Cancelled',
+      skipped: 'Skipped – Re-check-in required',
     };
-
     return (
       <span className={`px-3 py-1 rounded-full text-sm font-medium ${styles[status]}`}>
         {labels[status]}
@@ -109,23 +142,41 @@ export function PatientDashboard({ }: PatientDashboardProps) {
 
   const getStatusIcon = (status: Booking['status']) => {
     switch (status) {
-      case 'upcoming':
-        return <Clock className="w-5 h-5 text-blue-600" />;
-      case 'checked-in':
-        return <AlertCircle className="w-5 h-5 text-yellow-600" />;
-      case 'in-progress':
-        return <Clock3 className="w-5 h-5 text-purple-600" />;
-      case 'completed':
-        return <CheckCircle className="w-5 h-5 text-green-600" />;
-      case 'cancelled':
-        return <X className="w-5 h-5 text-red-600" />;
-      default:
-        return null;
+      case 'upcoming': return <Clock className="w-5 h-5 text-blue-600" />;
+      case 'checked-in': return <AlertCircle className="w-5 h-5 text-yellow-600" />;
+      case 'in-progress': return <Clock3 className="w-5 h-5 text-purple-600" />;
+      case 'completed': return <CheckCircle className="w-5 h-5 text-green-600" />;
+      case 'cancelled': return <X className="w-5 h-5 text-red-600" />;
+      case 'skipped': return <AlertCircle className="w-5 h-5 text-orange-500" />;
+      default: return null;
     }
   };
 
-  const upcomingBookings = bookings.filter(b => b.status === 'upcoming');
-  const pastBookings = bookings.filter(b => b.status !== 'upcoming');
+  const upcomingBookings = bookings.filter(b => b.status === 'upcoming' || b.status === 'checked-in' || b.status === 'in-progress' || b.status === 'skipped');
+  const pastBookings = bookings.filter(b => b.status === 'completed' || b.status === 'cancelled');
+
+  const handleViewSlip = (booking: Booking) => {
+    const raw = booking.rawBooking;
+    const slipData: BookingData & { status?: string } = {
+      bookingId: booking.id,
+      queueNumber: booking.queueNumber,
+      hospital: booking.hospital,
+      // Use already-resolved display string (not the raw ObjectId/object)
+      department: booking.department,
+      doctor: booking.doctorName || booking.doctor,
+      date: booking.date,
+      estimatedTime: booking.estimatedTime,
+      currentlyServing: booking.currentlyServing,
+      status: raw?.status,
+    };
+    const rawDeptId = raw?.department?._id || raw?.department || '';
+    sessionStorage.setItem(FLOW_SESSION_KEY, JSON.stringify({
+      dateAndDepartment: { date: booking.date, department: rawDeptId, departmentName: booking.department },
+      selectedDoctor: { _id: raw?.doctor?._id || raw?.doctor || '', name: booking.doctorName || booking.doctor },
+      bookingData: slipData,
+    }));
+    navigate('/app/slip');
+  };
 
   const handleLogout = () => {
     clearSession();
@@ -247,21 +298,28 @@ export function PatientDashboard({ }: PatientDashboardProps) {
                           {getStatusBadge(booking.status)}
                         </div>
                         <p className="text-gray-600 font-medium mb-3">{booking.doctor}</p>
-                        {booking.status === 'upcoming' && (
+                        <div className="flex items-center gap-3 mb-3">
+                          {booking.status === 'upcoming' && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await import('../../api/bookings').then(m => m.cancelBooking(booking.id));
+                                  setBookings(bookings.map(b => b.id === booking.id ? { ...b, status: 'cancelled' } : b));
+                                } catch (e) { console.error('cancel', e); }
+                              }}
+                              className="text-red-600 text-sm hover:underline"
+                            >
+                              Cancel
+                            </button>
+                          )}
                           <button
-                            onClick={async () => {
-                              try {
-                                await import('../../api/bookings').then(m => m.cancelBooking(booking.id));
-                                setBookings(bookings.map(b => b.id === booking.id ? { ...b, status: 'cancelled' } : b));
-                              } catch (e) {
-                                console.error('cancel', e);
-                              }
-                            }}
-                            className="text-red-600 text-sm hover:underline"
+                            onClick={() => handleViewSlip(booking)}
+                            className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
                           >
-                            Cancel
+                            <Eye className="w-4 h-4" />
+                            View Slip
                           </button>
-                        )}
+                        </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                           <div className="flex items-center gap-2 text-gray-600">
                             <Building2 className="w-4 h-4 flex-shrink-0" />
@@ -318,10 +376,17 @@ export function PatientDashboard({ }: PatientDashboardProps) {
                           {getStatusBadge(booking.status)}
                         </div>
                         <p className="text-gray-600 font-medium mb-2">{booking.doctor}</p>
-                        <div className="flex items-center gap-4 text-sm text-gray-600">
+                        <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
                           <span>{booking.department}</span>
                           <span>{booking.date}</span>
                         </div>
+                        <button
+                          onClick={() => handleViewSlip(booking)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors"
+                        >
+                          <FileText className="w-4 h-4" />
+                          View Slip
+                        </button>
                       </div>
                     </div>
                   </div>

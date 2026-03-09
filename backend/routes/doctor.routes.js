@@ -8,7 +8,7 @@ const { requireRole } = require("../middleware/role");
 router.get("/", doctorController.getDoctors);
 router.get("/departments", doctorController.getDepartments);
 // หมอดูคิวของตัวเอง (ต้อง auth + role doctor)
-router.get("/me/queues", auth, requireRole("doctor"), doctorController.getMyQueues);
+router.get("/me/queues", auth, requireRole("doctor", "admin"), doctorController.getMyQueues);
 router.get("/:id", doctorController.getDoctorById);
 
 // จัดการหมอ — เฉพาะ admin

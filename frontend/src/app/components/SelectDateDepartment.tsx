@@ -29,6 +29,7 @@ export function SelectDateDepartment() {
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [departments, setDepartments] = useState<string[]>(FALLBACK_DEPARTMENTS);
   const [departmentOpen, setDepartmentOpen] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const departmentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,7 +37,7 @@ export function SelectDateDepartment() {
       .then((list) => {
         if (list.length > 0) setDepartments(list);
       })
-      .catch(() => {});
+      .catch(() => setLoadError('Failed to load departments. Please refresh the page.'));
   }, []);
 
   useEffect(() => {
@@ -123,6 +124,12 @@ export function SelectDateDepartment() {
             </p>
           </div>
         </div>
+
+        {loadError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 font-medium">
+            {loadError}
+          </div>
+        )}
 
         {/* Main Card - padding รองรับมือถือ */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 sm:p-6 md:p-8">

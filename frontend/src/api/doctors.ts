@@ -31,9 +31,10 @@ export async function getDoctorsByUserId(userId: string): Promise<Doctor[]> {
 }
 
 /** คิวของหมอที่ล็อกอิน (ใช้ใน Doctor Dashboard) — ต้องส่ง token */
-export async function getMyQueues(date: string): Promise<any[]> {
-  const query = `?date=${encodeURIComponent(date)}`;
-  return api.get<any[]>(`/doctors/me/queues${query}`);
+export async function getMyQueues(date: string, doctorId?: string): Promise<any[]> {
+  const params = new URLSearchParams({ date });
+  if (doctorId) params.set('doctorId', doctorId);
+  return api.get<any[]>(`/doctors/me/queues?${params.toString()}`);
 }
 
 export async function updatePatientStatus(

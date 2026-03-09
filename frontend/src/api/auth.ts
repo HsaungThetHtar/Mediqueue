@@ -42,6 +42,10 @@ export function getSession(): AuthUser | null {
   return raw ? (JSON.parse(raw) as AuthUser) : null;
 }
 
+export function getToken(): string | null {
+  return localStorage.getItem("token");
+}
+
 export function clearSession() {
   localStorage.removeItem("token");
   localStorage.removeItem("user");

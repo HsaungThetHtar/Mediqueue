@@ -4,7 +4,7 @@ import { ImageWithFallback } from './figma/ImageWithFallback';
 import { useNavigate, useOutletContext } from 'react-router';
 import { io } from 'socket.io-client';
 import { getDoctors } from '../../api/doctors';
-import { clearSession } from '../../api/auth';
+import { clearSession, getToken } from '../../api/auth';
 import { BASE_URL } from '../../api/client';
 import { DateDepartmentSelection } from './SelectDateDepartment';
 import { getDepartmentName } from '../../utils/department';
@@ -66,7 +66,7 @@ export function SelectedDoctor() {
     fetchDoctors();
 
     // Socket.io: realtime doctor queue updates
-    const socket = io(BASE_URL);
+    const socket = io(BASE_URL, { auth: { token: getToken() } });
     socket.on('doctor-update', (updatedDoctor: Doctor) => {
       setDoctors((prev) =>
         prev.map((doc) => (doc._id === updatedDoctor._id ? { ...doc, ...updatedDoctor } : doc))

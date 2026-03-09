@@ -17,18 +17,24 @@ exports.createCheckIn = async function (req, res) {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    if (booking.patientId.toString() !== patientId) {
+    if (!booking.patientId || booking.patientId.toString() !== patientId) {
       return res.status(403).json({ message: "Unauthorized" });
     }
 
-    if (booking.status !== "waiting") {
-      return res.status(400).json({ message: "Booking is not in waiting status" });
+    // Accept check-in for "waiting" (first time) OR "skipped" (re-check-in after timeout)
+    if (booking.status !== "waiting" && booking.status !== "skipped") {
+      return res.status(400).json({ message: "Booking is not available for check-in" });
     }
 
-    // FIX #4: Prevent duplicate check-in for same booking
+    // FIX #4: Prevent duplicate check-in — but for skipped, delete old CheckIn record first to allow re-checkin
     const existingCheckIn = await CheckIn.findOne({ bookingId });
     if (existingCheckIn) {
-      return res.status(409).json({ message: "Already checked in for this booking" });
+      if (booking.status === "skipped") {
+        // Re-checkin after timeout — remove old record and allow new one
+        await CheckIn.deleteOne({ _id: existingCheckIn._id });
+      } else {
+        return res.status(409).json({ message: "Already checked in for this booking" });
+      }
     }
 
     const checkIn = await CheckIn.create({
@@ -39,7 +45,11 @@ exports.createCheckIn = async function (req, res) {
       status: "confirmed",
     });
 
-    await Booking.findByIdAndUpdate(bookingId, { status: "checked-in" });
+    await Booking.findByIdAndUpdate(bookingId, {
+      status: "checked-in",
+      calledAt: null,     // clear call timestamp
+      skippedAt: null,    // stop the 10-min auto-cancel countdown
+    });
 
     const notifDoc = await Notification.create({
       userId: patientId,
@@ -50,8 +60,8 @@ exports.createCheckIn = async function (req, res) {
     });
 
     const io = req.app.get("io");
-    io.emit("checkin-update", { bookingId, status: "checked-in" });
-    io.emit("notification", {
+    io.to(`user:${patientId}`).to("role:admin").emit("checkin-update", { bookingId, status: "checked-in" });
+    io.to(`user:${patientId}`).emit("notification", {
       userId: String(patientId),
       notification: { _id: notifDoc._id, title: notifDoc.title, message: notifDoc.message, type: "status", relatedBookingId: bookingId, isRead: false, createdAt: notifDoc.createdAt },
     });
@@ -88,7 +98,8 @@ exports.validateBookingCode = async function (req, res) {
       return res.status(403).json({ message: "This booking does not belong to your account" });
     }
 
-    if (booking.status !== "waiting") {
+    // Allow check-in for "waiting" (first time) OR "skipped" (re-checkin after timeout)
+    if (booking.status !== "waiting" && booking.status !== "skipped") {
       return res.status(400).json({
         message: "Booking is not available for check-in",
         status: booking.status,
@@ -120,7 +131,7 @@ exports.getCheckInStatus = async function (req, res) {
     const patientId = req.user.userId;
 
     const booking = await Booking.findById(bookingId);
-    if (!booking || booking.patientId.toString() !== patientId) {
+    if (!booking || !booking.patientId || booking.patientId.toString() !== patientId) {
       return res.status(404).json({ message: "Booking not found" });
     }
 

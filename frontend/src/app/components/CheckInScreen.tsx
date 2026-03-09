@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import { QrCode, MapPin, Clock, User, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
+import { QrCode, CheckCircle, AlertCircle, ArrowLeft, Camera, CameraOff } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { getDepartmentName } from '../../utils/department';
 
@@ -14,6 +15,8 @@ interface BookingInfo {
   time: string;
 }
 
+const QR_READER_ID = 'qr-reader-viewport';
+
 export function CheckInScreen() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -25,24 +28,27 @@ export function CheckInScreen() {
   const [manualCode, setManualCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [checkInSuccess, setCheckInSuccess] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // ไม่ redirect อัตโนมัติ — ให้ผู้ใช้ใส่รหัสมือได้แม้เข้ามาโดยไม่มี state
-  }, []);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const scanningRef = useRef(false);
+  const navTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const displayBooking = bookingData;
+  // Cleanup nav timeout on unmount (M5)
+  useEffect(() => () => { if (navTimeoutRef.current) clearTimeout(navTimeoutRef.current); }, []);
 
-  const handleSimulateQRScan = () => {
-    setIsLoading(true);
-    setTimeout(() => {
-      setQrScanned(true);
-      setIsLoading(false);
-    }, 1500);
+  const stopScanner = async () => {
+    if (scannerRef.current && scanningRef.current) {
+      try {
+        await scannerRef.current.stop();
+      } catch (_) {}
+      scanningRef.current = false;
+    }
   };
 
-  const handleManualCodeSubmit = async () => {
-    const code = manualCode.trim();
-    if (!code) return;
+  const handleScannedCode = async (code: string) => {
+    await stopScanner();
+    setShowCamera(false);
     setIsLoading(true);
     try {
       const validated = await import('../../api/checkins').then(m => m.validateCheckInCode(code));
@@ -59,13 +65,52 @@ export function CheckInScreen() {
     } catch (err: any) {
       Swal.fire({
         icon: 'error',
-        title: 'ไม่พบการจอง',
-        text: err?.message || 'รหัสไม่ถูกต้องหรือการจองไม่สามารถเช็คอินได้',
+        title: 'Booking Not Found',
+        text: err?.message || 'QR code is invalid or booking cannot be checked in.',
         confirmButtonColor: '#1E88E5',
       });
     } finally {
       setIsLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (!showCamera) return;
+
+    setCameraError(null);
+    const scanner = new Html5Qrcode(QR_READER_ID);
+    scannerRef.current = scanner;
+
+    scanner
+      .start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        (decodedText) => {
+          if (!scanningRef.current) return;
+          handleScannedCode(decodedText);
+        },
+        () => {} // per-frame failure is expected — ignore
+      )
+      .then(() => {
+        scanningRef.current = true;
+      })
+      .catch((err: Error) => {
+        setCameraError(err?.message || 'Camera access denied. Please allow camera permission and try again.');
+        setShowCamera(false);
+      });
+
+    return () => {
+      stopScanner();
+    };
+  }, [showCamera]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cleanup on unmount
+  useEffect(() => () => { stopScanner(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleManualCodeSubmit = async () => {
+    const code = manualCode.trim();
+    if (!code) return;
+    await handleScannedCode(code);
   };
 
   const handleConfirmCheckIn = async () => {
@@ -78,7 +123,7 @@ export function CheckInScreen() {
         notes: ''
       }));
       setCheckInSuccess(true);
-      setTimeout(() => {
+      navTimeoutRef.current = setTimeout(() => {
         navigate('/dashboard');
       }, 1500);
     } catch (err) {
@@ -121,7 +166,7 @@ export function CheckInScreen() {
             </p>
             <div className="bg-blue-50 rounded-lg p-4 mb-6">
               <p className="text-sm text-gray-600 mb-1">Your Queue Number</p>
-              <p className="text-3xl font-bold text-blue-600">{displayBooking?.queueNumber ?? "—"}</p>
+              <p className="text-3xl font-bold text-blue-600">{bookingData?.queueNumber ?? '—'}</p>
             </div>
             <button
               onClick={() => {
@@ -142,39 +187,39 @@ export function CheckInScreen() {
                 <div className="p-2 bg-green-100 rounded-lg">
                   <CheckCircle className="w-5 h-5 text-green-600" />
                 </div>
-                <h2 className="text-xl font-semibold text-gray-900">QR Code Verified</h2>
+                <h2 className="text-xl font-semibold text-gray-900">Booking Verified</h2>
               </div>
 
               <div className="space-y-4 mb-6">
                 <div className="bg-gray-50 rounded-lg p-4">
                   <p className="text-sm text-gray-600 font-medium mb-1">Queue Number</p>
-                  <p className="text-2xl font-bold text-gray-900">{displayBooking?.queueNumber ?? "—"}</p>
+                  <p className="text-2xl font-bold text-gray-900">{bookingData.queueNumber}</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-sm text-gray-600 font-medium mb-1">Doctor</p>
-                    <p className="text-lg font-semibold text-gray-900">{displayBooking?.doctor ?? "—"}</p>
+                    <p className="text-lg font-semibold text-gray-900">{bookingData.doctor}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-sm text-gray-600 font-medium mb-1">Department</p>
-                    <p className="text-lg font-semibold text-gray-900">{getDepartmentName((displayBooking as any)?.department) || "—"}</p>
+                    <p className="text-lg font-semibold text-gray-900">{getDepartmentName((bookingData as any).department) || '—'}</p>
                   </div>
                 </div>
 
                 <div className="bg-gray-50 rounded-lg p-4">
                   <p className="text-sm text-gray-600 font-medium mb-1">Hospital</p>
-                  <p className="text-lg font-semibold text-gray-900">{displayBooking?.hospital ?? "—"}</p>
+                  <p className="text-lg font-semibold text-gray-900">{bookingData.hospital}</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-sm text-gray-600 font-medium mb-1">Date</p>
-                    <p className="text-lg font-semibold text-gray-900">{displayBooking?.date ?? "—"}</p>
+                    <p className="text-lg font-semibold text-gray-900">{bookingData.date}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-sm text-gray-600 font-medium mb-1">Time</p>
-                    <p className="text-lg font-semibold text-gray-900">{displayBooking?.time ?? "—"}</p>
+                    <p className="text-lg font-semibold text-gray-900">{bookingData.time}</p>
                   </div>
                 </div>
               </div>
@@ -218,27 +263,50 @@ export function CheckInScreen() {
             <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-100">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">Scan QR Code</h2>
 
-              <div className="bg-gradient-to-b from-gray-100 to-gray-50 rounded-lg aspect-square flex items-center justify-center mb-4 relative overflow-hidden">
-                {/* Camera placeholder */}
-                <div className="text-center">
-                  <QrCode className="w-20 h-20 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600 font-medium">Point camera at QR code</p>
-                  <p className="text-sm text-gray-500 mt-1">Or use manual entry below</p>
+              {/* Camera error message */}
+              {cameraError && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                  {cameraError}
                 </div>
+              )}
 
-                {/* Corner indicators */}
-                <div className="absolute top-4 left-4 w-8 h-8 border-t-2 border-l-2 border-blue-500"></div>
-                <div className="absolute top-4 right-4 w-8 h-8 border-t-2 border-r-2 border-blue-500"></div>
-                <div className="absolute bottom-4 left-4 w-8 h-8 border-b-2 border-l-2 border-blue-500"></div>
-                <div className="absolute bottom-4 right-4 w-8 h-8 border-b-2 border-r-2 border-blue-500"></div>
-              </div>
+              {/* Scanner viewport — html5-qrcode mounts into this div */}
+              <div
+                id={QR_READER_ID}
+                className={`rounded-lg overflow-hidden mb-4 ${showCamera ? 'min-h-[300px]' : 'hidden'}`}
+              />
+
+              {/* Placeholder shown when camera is off */}
+              {!showCamera && (
+                <div className="bg-gradient-to-b from-gray-100 to-gray-50 rounded-lg aspect-square flex items-center justify-center mb-4 relative overflow-hidden">
+                  <div className="text-center">
+                    <QrCode className="w-20 h-20 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-600 font-medium">Point camera at QR code</p>
+                    <p className="text-sm text-gray-500 mt-1">Or use manual entry below</p>
+                  </div>
+                  <div className="absolute top-4 left-4 w-8 h-8 border-t-2 border-l-2 border-blue-500"></div>
+                  <div className="absolute top-4 right-4 w-8 h-8 border-t-2 border-r-2 border-blue-500"></div>
+                  <div className="absolute bottom-4 left-4 w-8 h-8 border-b-2 border-l-2 border-blue-500"></div>
+                  <div className="absolute bottom-4 right-4 w-8 h-8 border-b-2 border-r-2 border-blue-500"></div>
+                </div>
+              )}
 
               <button
-                onClick={handleSimulateQRScan}
+                onClick={async () => {
+                  if (showCamera) {
+                    await stopScanner();
+                    setShowCamera(false);
+                  } else {
+                    setShowCamera(true);
+                  }
+                }}
                 disabled={isLoading}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-3 rounded-lg transition-colors"
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
               >
-                {isLoading ? 'Scanning...' : 'Simulate QR Scan'}
+                {showCamera
+                  ? <><CameraOff className="w-5 h-5" /> Stop Camera</>
+                  : <><Camera className="w-5 h-5" /> Start Camera</>
+                }
               </button>
             </div>
 
@@ -259,14 +327,12 @@ export function CheckInScreen() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g., Q-001 หรือหมายเลขการจอง"
+                  placeholder="e.g., M-001 or booking ID"
                   value={manualCode}
                   onChange={(e) => setManualCode(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleManualCodeSubmit()}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
-                <p className="text-sm text-gray-500 mt-2">
-                  You can find this code in your booking confirmation email
-                </p>
               </div>
 
               <button

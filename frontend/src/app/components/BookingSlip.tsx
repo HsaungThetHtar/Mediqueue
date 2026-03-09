@@ -4,6 +4,7 @@ import { io } from 'socket.io-client';
 import { BookingData } from '../MainApp';
 import { cancelBooking, getQueueStatus } from '../../api/bookings';
 import { BASE_URL } from '../../api/client';
+import { getToken } from '../../api/auth';
 import { QRCodeSVG } from 'qrcode.react';
 import { getDepartmentName } from '../../utils/department';
 import { useNavigate, useOutletContext } from 'react-router';
@@ -46,17 +47,10 @@ export function BookingSlip() {
     return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
-  const qrCodeData = JSON.stringify({
-    queueNumber: bookingData.queueNumber,
-    hospital: bookingData.hospital,
-    department: bookingData.department,
-    doctor: bookingData.doctor,
-    date: bookingData.date,
-    estimatedTime: bookingData.estimatedTime,
-    timestamp: new Date().toISOString(),
-  });
-
   const bookingId = (bookingData as any).bookingId || (bookingData as any).id || (bookingData as any)._id;
+
+  // Only encode the booking ID — the check-in endpoint does a server-side lookup
+  const qrCodeData = bookingId || bookingData.queueNumber || '';
 
   const fetchStatus = React.useCallback(() => {
     if (!bookingId) return;
@@ -72,7 +66,7 @@ export function BookingSlip() {
 
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 15000);
+    const interval = setInterval(fetchStatus, 30000);
     return () => clearInterval(interval);
   }, [fetchStatus]);
 
@@ -102,32 +96,63 @@ export function BookingSlip() {
 
   useEffect(() => {
     if (!bookingId) return;
-    const socket = io(BASE_URL);
-    socket.on('booking-update', (payload: { bookingId: string; status: string }) => {
-      if (payload.bookingId === bookingId && payload.status === 'in-progress') {
-        setShowQueueCalledModal(true);
+    const socket = io(BASE_URL, { auth: { token: getToken() } });
+
+    // Helper: convert currentQueueServing (number or "M-003") to display string like "M-003"
+    const toDisplayServing = (val: number | string | undefined) => {
+      if (val == null) return null;
+      if (typeof val === 'string' && val.includes('-')) return val;
+      const num = typeof val === 'number' ? val : parseInt(String(val), 10);
+      if (isNaN(num)) return null;
+      return `${prefix}-${String(num).padStart(3, '0')}`;
+    };
+
+    socket.on('booking-update', (payload: { bookingId: string; status: string; booking?: any }) => {
+      if (payload.bookingId === bookingId) {
+        if (payload.status === 'in-progress' || payload.status === 'called') setShowQueueCalledModal(true);
+        if (payload.status) setLiveStatus(payload.status);
+        // Only update currentServing for our own booking (H3 fix)
+        const serving = payload.booking?.doctor?.currentQueueServing;
+        const display = toDisplayServing(serving);
+        if (display) setCurrentServing(display);
+        fetchStatus();
       }
-      if (payload.bookingId === bookingId && payload.status) {
-        setLiveStatus(payload.status);
+    });
+
+    socket.on('queue-update', (payload: { type: string; booking?: any; nextBooking?: any }) => {
+      // When a queue is called, update currentServing immediately from the called booking
+      if (payload.type === 'called' && payload.booking) {
+        const b = payload.booking;
+        // If this is our booking being called
+        if (b._id === bookingId) setShowQueueCalledModal(true);
+        // Update currently serving from queueNumber of the called booking
+        const serving = b.doctor?.currentQueueServing ?? b.queueNumber;
+        const display = toDisplayServing(serving);
+        if (display) setCurrentServing(display);
+      }
+      // On complete/skip, next booking becomes the new serving
+      if ((payload.type === 'completed' || payload.type === 'skipped') && payload.nextBooking) {
+        const serving = payload.nextBooking.doctor?.currentQueueServing ?? payload.nextBooking.queueNumber;
+        const display = toDisplayServing(serving);
+        if (display) setCurrentServing(display);
       }
       fetchStatus();
     });
-    socket.on('queue-update', (payload: { type: string; booking?: { _id: string } }) => {
-      if (payload.type === 'called' && payload.booking?._id === bookingId) {
-        setShowQueueCalledModal(true);
-      }
-      fetchStatus();
+
+    socket.on('doctor-update', (payload: { currentQueueServing?: number | string; _id?: string }) => {
+      // Doctor model update — has the latest currentQueueServing
+      const display = toDisplayServing(payload.currentQueueServing);
+      if (display) setCurrentServing(display);
     });
+
     socket.on('checkin-update', (payload: { bookingId: string; status: string }) => {
       if (payload.bookingId === bookingId) {
-        // FIX #10: Update status when admin checks in patient
         setLiveStatus(payload.status || 'checked-in');
       }
     });
-    return () => {
-      socket.disconnect();
-    };
-  }, [bookingId, fetchStatus]);
+
+    return () => { socket.disconnect(); };
+  }, [bookingId, fetchStatus, prefix]);
 
   // FIX #10: Patient can only cancel if status is "waiting" (not after check-in)
   const canCancel = liveStatus === 'waiting';

@@ -45,7 +45,7 @@ exports.updateDepartment = async function (req, res) {
     const doc = await Department.findByIdAndUpdate(
       req.params.id,
       { ...(name != null && { name: String(name).trim() }), ...(typeof displayOrder === "number" && { displayOrder }) },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!doc) return res.status(404).json({ message: "Department not found" });
     res.json(doc);

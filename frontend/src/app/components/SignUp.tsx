@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import svgPaths from '../../imports/svg-c3y431orpb';
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import Swal from 'sweetalert2';
 
 export function SignUp() {
+  const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -42,7 +43,7 @@ export function SignUp() {
       const result = await import('../../api/auth').then(m => m.signUp(signUpData));
       import('../../api/auth').then(m => m.saveSession(result.token, result.user));
       // after signup, go to select date/department to start booking
-      window.location.href = '/app/select-date';
+      navigate('/app/select-date');
     } catch (err: any) {
       Swal.fire({ icon: 'error', title: 'Registration Failed', text: err.message || 'Failed to create account', confirmButtonColor: '#1E88E5' });
     }

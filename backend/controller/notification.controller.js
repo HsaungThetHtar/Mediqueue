@@ -23,7 +23,7 @@ exports.markAsRead = async function (req, res) {
     const notification = await Notification.findOneAndUpdate(
       { _id: id, userId },
       { isRead: true },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     if (!notification) {
@@ -50,7 +50,7 @@ exports.createNotification = async function (req, res) {
     });
 
     const io = req.app.get("io");
-    io.emit("notification", { userId, notification });
+    io.to(`user:${userId}`).emit("notification", { userId, notification });
 
     res.status(201).json(notification);
   } catch (err) {

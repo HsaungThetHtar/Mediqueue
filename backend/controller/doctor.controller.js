@@ -4,6 +4,12 @@ const Booking = require("../models/Booking");
 const Notification = require("../models/Notification");
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
+const QueueEvent = require("../models/QueueEvent");
+
+async function logQueueEvent({ bookingId, action, performedBy, performedByRole, queueNumber, notes }) {
+  try { await QueueEvent.create({ bookingId, action, performedBy, performedByRole, queueNumber, notes }); }
+  catch (err) { console.error("[QueueEvent] Failed to log:", err.message); }
+}
 
 exports.getDepartments = async function (req, res) {
   try {
@@ -35,7 +41,7 @@ exports.getDoctors = async function (req, res) {
     if (date && doctors.length > 0) {
       const ids = doctors.map((d) => d._id);
       const counts = await Booking.aggregate([
-        { $match: { doctor: { $in: ids }, date: String(date), status: { $ne: "canceled" } } },
+        { $match: { doctor: { $in: ids }, date: String(date), status: { $nin: ["canceled", "skipped"] } } },
         { $group: { _id: "$doctor", total: { $sum: 1 } } },
       ]);
       const countByDoctor = Object.fromEntries(counts.map((c) => [String(c._id), c.total]));
@@ -51,7 +57,13 @@ exports.getDoctors = async function (req, res) {
 
 exports.getMyQueues = async function (req, res) {
   try {
-    const doctor = await Doctor.findOne({ userId: req.user.userId }).lean();
+    // Admin can pass ?doctorId= to view any doctor's queues; doctor finds by linked userId
+    let doctor;
+    if (req.query.doctorId) {
+      doctor = await Doctor.findById(req.query.doctorId).lean();
+    } else {
+      doctor = await Doctor.findOne({ userId: req.user.userId }).lean();
+    }
     if (!doctor) {
       return res.status(404).json({ message: "Doctor profile not found for this account" });
     }
@@ -59,12 +71,18 @@ exports.getMyQueues = async function (req, res) {
     if (!date) {
       return res.status(400).json({ message: "Query date is required (YYYY-MM-DD)" });
     }
-    const queues = await Booking.find({
+
+    // BUG-08 FIX: Support optional ?timeSlot=morning|afternoon so doctor can view each session separately
+    const filter = {
       doctor: doctor._id,
       date: String(date),
-      // FIX #7: Exclude canceled AND skipped from doctor's queue view
       status: { $nin: ["canceled", "skipped"] },
-    })
+    };
+    if (req.query.timeSlot) {
+      filter.timeSlot = req.query.timeSlot;
+    }
+
+    const queues = await Booking.find(filter)
       .populate({ path: "doctor", select: "name department", populate: { path: "department", select: "name" } })
       .populate("department", "name")
       .populate("patientId", "fullName dateOfBirth gender")
@@ -163,7 +181,7 @@ exports.updateDoctor = async function (req, res) {
       update.userId = await ensureDoctorUser(doctorName, email, password, req.params.id);
     }
 
-    const doc = await Doctor.findByIdAndUpdate(req.params.id, update, { new: true })
+    const doc = await Doctor.findByIdAndUpdate(req.params.id, update, { returnDocument: 'after' })
       .populate("department", "name displayOrder")
       .populate("userId", "email")
       .lean();
@@ -177,7 +195,7 @@ exports.updateDoctor = async function (req, res) {
 
 exports.deleteDoctor = async function (req, res) {
   try {
-    const active = await Booking.countDocuments({ doctor: req.params.id, status: { $ne: "canceled" } });
+    const active = await Booking.countDocuments({ doctor: req.params.id, status: { $nin: ["canceled", "skipped"] } });
     if (active > 0) {
       return res.status(409).json({ message: "Cannot delete: this doctor has active bookings" });
     }
@@ -204,6 +222,14 @@ exports.updatePatientStatus = async function (req, res) {
       return res.status(400).json({ message: "bookingId and status are required" });
     }
 
+    // C4 FIX: Doctors may only update patients in their own queue
+    if (req.user.role === "doctor") {
+      const linkedDoctor = await Doctor.findOne({ userId: req.user.userId });
+      if (!linkedDoctor || String(linkedDoctor._id) !== String(doctorId)) {
+        return res.status(403).json({ message: "You can only update patients in your own queue" });
+      }
+    }
+
     const booking = await Booking.findOne({ _id: bookingId, doctor: doctorId });
     if (!booking) {
       return res.status(404).json({ message: "Booking not found for this doctor" });
@@ -218,36 +244,33 @@ exports.updatePatientStatus = async function (req, res) {
     }
 
     const update = status === "in-progress" ? { status, calledAt: new Date() } : { status };
-    const updatedBooking = await Booking.findByIdAndUpdate(bookingId, update, { new: true })
+    const updatedBooking = await Booking.findByIdAndUpdate(bookingId, update, { returnDocument: 'after' })
       .populate({ path: "doctor", select: "name department", populate: { path: "department", select: "name" } })
       .populate("department", "name");
 
-    // When doctor completes: advance queue to next checked-in patient first, then waiting
+    // When doctor completes: log FINISH event; advance queue to next patient
     let nextBooking = null;
     if (status === "completed") {
-      // FIX #9: Prioritize "checked-in" patients before "waiting" ones
+      // TC21: Log QUEUE_EVENT FINISH (NFR-AUD-01)
+      await logQueueEvent({
+        bookingId,
+        action: "FINISH",
+        performedBy: req.user && req.user.userId,
+        performedByRole: req.user && req.user.role,
+        queueNumber: booking.queueNumber,
+      });
+
+      // Prioritize "checked-in" => in-progress; else "waiting" => "called"
       nextBooking = await Booking.findOneAndUpdate(
-        {
-          doctor: booking.doctor,
-          date: booking.date,
-          timeSlot: booking.timeSlot,
-          status: "checked-in",
-          _id: { $ne: bookingId },
-        },
+        { doctor: booking.doctor, date: booking.date, timeSlot: booking.timeSlot, status: "checked-in", _id: { $ne: bookingId } },
         { status: "in-progress", calledAt: new Date() },
         { new: true, sort: { createdAt: 1 } }
       );
 
       if (!nextBooking) {
         nextBooking = await Booking.findOneAndUpdate(
-          {
-            doctor: booking.doctor,
-            date: booking.date,
-            timeSlot: booking.timeSlot,
-            status: "waiting",
-            _id: { $ne: bookingId },
-          },
-          { status: "in-progress", calledAt: new Date() },
+          { doctor: booking.doctor, date: booking.date, timeSlot: booking.timeSlot, status: "waiting", _id: { $ne: bookingId } },
+          { status: "called", calledAt: new Date() },
           { new: true, sort: { createdAt: 1 } }
         );
       }
@@ -255,8 +278,14 @@ exports.updatePatientStatus = async function (req, res) {
       if (nextBooking) {
         const parts = String(nextBooking.queueNumber || "").split("-");
         const currentNumber = parts.length === 2 ? parseInt(parts[1], 10) || 0 : 0;
-        await Doctor.findByIdAndUpdate(doctorId, {
-          currentQueueServing: currentNumber,
+        await Doctor.findByIdAndUpdate(doctorId, { currentQueueServing: currentNumber });
+        await logQueueEvent({
+          bookingId: nextBooking._id,
+          action: "CALL",
+          performedBy: req.user && req.user.userId,
+          performedByRole: req.user && req.user.role,
+          queueNumber: nextBooking.queueNumber,
+          notes: "auto-called after doctor FINISH",
         });
       }
     }
@@ -288,8 +317,9 @@ exports.updatePatientStatus = async function (req, res) {
 
     const departmentName = updatedBooking.department?.name || "";
     const io = req.app.get("io");
-    io.emit("booking-update", { bookingId, status, booking: updatedBooking });
-    io.emit("notification", {
+    // Patient gets their own booking-update; admins/doctors see the queue dashboard update
+    io.to(`user:${booking.patientId}`).to("role:admin").to("role:doctor").emit("booking-update", { bookingId, status, booking: updatedBooking });
+    io.to(`user:${booking.patientId}`).emit("notification", {
       userId: String(booking.patientId),
       notification: {
         _id: notifDoc._id,
@@ -314,12 +344,13 @@ exports.updatePatientStatus = async function (req, res) {
         type: "status",
         relatedBookingId: nextBooking._id,
       });
-      io.emit("queue-update", {
+      io.to("role:admin").to("role:doctor").emit("queue-update", {
         type: "doctor-completed",
         completedBooking: updatedBooking,
         nextBooking,
       });
-      io.emit("notification", {
+      io.to(`user:${nextBooking.patientId}`).emit("booking-update", { bookingId: nextBooking._id, status: nextBooking.status });
+      io.to(`user:${nextBooking.patientId}`).emit("notification", {
         userId: String(nextBooking.patientId),
         notification: {
           _id: nextNotif._id,
@@ -329,6 +360,8 @@ exports.updatePatientStatus = async function (req, res) {
           relatedBookingId: nextBooking._id,
           isRead: false,
           createdAt: nextNotif.createdAt,
+          queueNumber: nextBooking.queueNumber,
+          doctorName: nextBooking.doctorName,
         },
       });
     }
@@ -348,6 +381,14 @@ exports.saveBookingNotes = async function (req, res) {
       return res.status(400).json({ message: "bookingId is required" });
     }
 
+    // C4 FIX: Doctors may only add notes to their own patients
+    if (req.user.role === "doctor") {
+      const linkedDoctor = await Doctor.findOne({ userId: req.user.userId });
+      if (!linkedDoctor || String(linkedDoctor._id) !== String(doctorId)) {
+        return res.status(403).json({ message: "You can only add notes to your own patients" });
+      }
+    }
+
     const booking = await Booking.findOne({ _id: bookingId, doctor: doctorId });
     if (!booking) {
       return res.status(404).json({ message: "Booking not found for this doctor" });
@@ -356,7 +397,7 @@ exports.saveBookingNotes = async function (req, res) {
     const updated = await Booking.findByIdAndUpdate(
       bookingId,
       { doctorNotes: doctorNotes != null ? String(doctorNotes) : "" },
-      { new: true }
+      { returnDocument: 'after' }
     )
       .populate({ path: "doctor", select: "name department", populate: { path: "department", select: "name" } })
       .populate("department", "name");

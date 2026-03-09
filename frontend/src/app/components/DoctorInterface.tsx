@@ -61,7 +61,7 @@ export function DoctorInterface() {
   useEffect(() => {
     const load = async () => {
       const user = getSession();
-      if (!user) {
+      if (!user || (user.role !== 'doctor' && user.role !== 'admin')) {
         setLoading(false);
         navigate('/signin', { replace: true });
         return;
@@ -80,7 +80,7 @@ export function DoctorInterface() {
         setDoctorId(doc._id);
 
         const today = todayISO();
-        const data = await getMyQueues(today);
+        const data = await getMyQueues(today, doc._id);
         const patientIdObj = (q: any) => (q.patientId && typeof q.patientId === 'object' ? q.patientId : null);
         setPatients(
           data.map((q) => {
@@ -98,8 +98,8 @@ export function DoctorInterface() {
               status:
                 q.status === 'in-progress'
                   ? 'in-consultation'
-                  : q.status === 'checked-in' || q.status === 'confirmed'
-                  ? 'checked-in-ready'   // FIX #11: checked-in = ready to be called by doctor
+                  : q.status === 'checked-in' || q.status === 'confirmed' || q.status === 'called'
+                  ? 'checked-in-ready'   // checked-in / called = ready to be called by doctor
                   : q.status === 'waiting'
                   ? 'waiting'            // waiting = booked but not yet at hospital
                   : q.status === 'completed'
@@ -135,7 +135,7 @@ export function DoctorInterface() {
 
   const refreshPatients = async () => {
     if (!doctorId) return;
-    const data = await getMyQueues(todayISO());
+    const data = await getMyQueues(todayISO(), doctorId || undefined);
     const patientIdObj = (q: any) => (q.patientId && typeof q.patientId === 'object' ? q.patientId : null);
     setPatients(
       data.map((q) => {
@@ -304,12 +304,34 @@ export function DoctorInterface() {
                   <p className="text-2xl font-bold text-gray-900">Queue #{currentPatient.queueNumber}</p>
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedPatient(currentPatient)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors"
-              >
-                View Details
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMedicalNotes(currentPatient?.doctorNotes ?? '');
+                    setShowNotes(!showNotes);
+                  }}
+                  className="flex items-center gap-2 border-2 border-gray-300 hover:border-gray-400 bg-white text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors"
+                >
+                  <FileText className="w-4 h-4" />
+                  {showNotes ? 'Hide Notes' : 'Add Notes'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCompleteConsultation}
+                  disabled={completing}
+                  className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  {completing ? 'Saving...' : 'Complete Consultation'}
+                </button>
+                <button
+                  onClick={() => setSelectedPatient(currentPatient)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  View Details
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -470,34 +492,6 @@ export function DoctorInterface() {
               </div>
             </div>
 
-            {/* Actions */}
-            {currentPatient && (
-              <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-100 space-y-3">
-                <h3 className="font-bold text-gray-900">Consultation Actions</h3>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMedicalNotes(currentPatient?.doctorNotes ?? '');
-                    setShowNotes(!showNotes);
-                  }}
-                  className="w-full flex items-center gap-2 border-2 border-gray-300 hover:border-gray-400 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors"
-                >
-                  <FileText className="w-5 h-5" />
-                  {showNotes ? 'Hide Notes' : 'Add Notes'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleCompleteConsultation}
-                  disabled={completing}
-                  className="w-full flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  <CheckCircle className="w-5 h-5" />
-                  {completing ? 'กำลังบันทึก...' : 'Complete Consultation'}
-                </button>
-              </div>
-            )}
           </div>
         </div>
 

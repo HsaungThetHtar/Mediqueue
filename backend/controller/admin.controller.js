@@ -61,7 +61,7 @@ exports.updateSiteConfig = async function (req, res) {
     if (queuePerDay != null) update.queuePerDay = Number(queuePerDay);
     if (businessHours != null) update.businessHours = String(businessHours);
 
-    const doc = await SiteConfig.findOneAndUpdate({}, update, { new: true, upsert: true }).lean();
+    const doc = await SiteConfig.findOneAndUpdate({}, update, { returnDocument: 'after', upsert: true }).lean();
     res.json(doc);
   } catch (err) {
     res.status(500).json({ message: err.message });
