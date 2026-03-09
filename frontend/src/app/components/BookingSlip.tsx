@@ -6,7 +6,7 @@ import { cancelBooking, getQueueStatus } from '../../api/bookings';
 import { BASE_URL } from '../../api/client';
 import { QRCodeSVG } from 'qrcode.react';
 import { getDepartmentName } from '../../utils/department';
-import { useNavigate, useOutletContext } from 'react-router';
+import { useNavigate, useOutletContext, useLocation } from 'react-router';
 
 interface MainAppContext {
   bookingData: BookingData | null;
@@ -15,8 +15,10 @@ interface MainAppContext {
 }
 
 export function BookingSlip() {
-  const { bookingData, handleCancelBooking, handleBackToHome } = useOutletContext<MainAppContext>();
+  const { bookingData: contextBookingData, handleCancelBooking, handleBackToHome } = useOutletContext<MainAppContext>();
   const navigate = useNavigate();
+  const loc = useLocation();
+  const bookingData = contextBookingData || (loc.state && loc.state.booking);
 
   useEffect(() => {
     if (!bookingData) {
