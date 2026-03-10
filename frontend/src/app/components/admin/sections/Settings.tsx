@@ -14,6 +14,8 @@ import {
   Pencil,
   Trash2,
   X,
+  AlertTriangle,
+  FlaskConical,
 } from 'lucide-react';
 import { useOutletContext, useNavigate } from 'react-router';
 import {
@@ -72,6 +74,10 @@ export function Settings() {
   const [queuePerDay, setQueuePerDay] = useState(30);
   const [businessHours, setBusinessHours] = useState('08:00 - 17:00');
   const [saving, setSaving] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
+  const [prevQueuePerSession, setPrevQueuePerSession] = useState(15);
+  const [prevQueuePerDay, setPrevQueuePerDay] = useState(30);
+  const [demoLoading, setDemoLoading] = useState(false);
 
   // Form state - Account
   const [displayName, setDisplayName] = useState(userName);
@@ -140,6 +146,36 @@ export function Settings() {
       alert(e?.message || 'บันทึกไม่สำเร็จ');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDemoFull = async () => {
+    setDemoLoading(true);
+    setPrevQueuePerSession(queuePerSession);
+    setPrevQueuePerDay(queuePerDay);
+    try {
+      await updateSystemConfig({ hospitalName, queuePerSession: 0, queuePerDay: 0, businessHours });
+      setQueuePerSession(0);
+      setQueuePerDay(0);
+      setDemoMode(true);
+    } catch (e: any) {
+      alert(e?.message || 'Failed to activate demo mode');
+    } finally {
+      setDemoLoading(false);
+    }
+  };
+
+  const handleResetDemo = async () => {
+    setDemoLoading(true);
+    try {
+      await updateSystemConfig({ hospitalName, queuePerSession: prevQueuePerSession, queuePerDay: prevQueuePerDay, businessHours });
+      setQueuePerSession(prevQueuePerSession);
+      setQueuePerDay(prevQueuePerDay);
+      setDemoMode(false);
+    } catch (e: any) {
+      alert(e?.message || 'Failed to reset demo mode');
+    } finally {
+      setDemoLoading(false);
     }
   };
 
@@ -475,6 +511,43 @@ export function Settings() {
                     <Save className="w-4 h-4" />
                     บันทึกตั้งค่าระบบ
                   </button>
+
+                  {/* Demo Mode */}
+                  <div className="border-t border-gray-100 pt-6 mt-2">
+                    <p className="text-sm font-semibold text-gray-700 mb-1 flex items-center gap-2">
+                      <FlaskConical className="w-4 h-4 text-orange-500" />
+                      Demo Mode
+                    </p>
+                    <p className="text-xs text-gray-500 mb-3">
+                      Temporarily set queue limit to 0 to simulate a fully booked system. Use this to demonstrate how the system blocks new bookings when capacity is reached.
+                    </p>
+                    {demoMode ? (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 text-amber-800">
+                          <AlertTriangle className="w-4 h-4" />
+                          <span className="text-sm font-medium">Demo Active — All queues are showing as full</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleResetDemo}
+                          disabled={demoLoading}
+                          className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                        >
+                          {demoLoading ? 'Resetting...' : 'Reset to Normal'}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleDemoFull}
+                        disabled={demoLoading || saving}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                      >
+                        <FlaskConical className="w-4 h-4" />
+                        {demoLoading ? 'Activating...' : 'Simulate Full Queue'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

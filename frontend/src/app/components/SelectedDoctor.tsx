@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Clock, Users, ChevronLeft, LogOut, Zap, LayoutDashboard } from 'lucide-react';
+import { Activity, Clock, Users, ChevronLeft, LogOut, Zap, LayoutDashboard, FlaskConical } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { useNavigate, useOutletContext } from 'react-router';
 import { io } from 'socket.io-client';
@@ -8,6 +8,7 @@ import { clearSession, getToken } from '../../api/auth';
 import { BASE_URL } from '../../api/client';
 import { DateDepartmentSelection } from './SelectDateDepartment';
 import { getDepartmentName } from '../../utils/department';
+import { getSystemConfig } from '../../api/settings';
 
 export interface Doctor {
   _id: string;
@@ -36,7 +37,13 @@ export function SelectedDoctor() {
 
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [queueLimit, setQueueLimit] = useState(30);
+  const [demoFull, setDemoFull] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    getSystemConfig().then(c => setQueueLimit(c.queuePerSession ?? 30)).catch(() => {});
+  }, []);
 
   // ถ้าไม่ได้เลือกแผนกมาก่อน (เช่น เข้าหน้าตรงหรือ refresh) ให้กลับไปเลือกวันที่/แผนก
   useEffect(() => {
@@ -78,10 +85,12 @@ export function SelectedDoctor() {
     };
   }, [selectedDepartment, selectedDate]);
 
-  const DAILY_QUEUE_LIMIT = 30;
+  const DAILY_QUEUE_LIMIT = queueLimit;
 
-  const queueCount = (d: Doctor & { dateQueueCount?: number }) =>
-    typeof d.dateQueueCount === 'number' ? d.dateQueueCount : d.currentQueue;
+  const queueCount = (d: Doctor & { dateQueueCount?: number }) => {
+    if (demoFull) return DAILY_QUEUE_LIMIT;
+    return typeof d.dateQueueCount === 'number' ? d.dateQueueCount : d.currentQueue;
+  };
 
   const findFastestDoctor = () => {
     const available = doctors.filter((d) => queueCount(d) < DAILY_QUEUE_LIMIT);
@@ -144,6 +153,14 @@ export function SelectedDoctor() {
               <span className="text-xl font-bold tracking-tight">MediQueue</span>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => setDemoFull(v => !v)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-[13px] transition-all border-2 active:scale-95 ${demoFull ? 'bg-orange-500 border-orange-500 text-white hover:bg-orange-600' : 'bg-white border-orange-400 text-orange-500 hover:bg-orange-50'}`}
+                title="Toggle demo: show all queues as full"
+              >
+                <FlaskConical className="w-4 h-4" />
+                {demoFull ? 'Demo: Full ON' : 'Demo: Full Queue'}
+              </button>
               <button
                 onClick={handleDashboard}
                 className="flex items-center gap-2 px-6 py-2.5 rounded-2xl font-bold text-[14px] transition-all bg-white text-[#1E88E5] border-2 border-[#1E88E5] hover:bg-blue-50 active:scale-95"

@@ -1,4 +1,4 @@
-import { Search, ChevronDown, User, Settings, LogOut, Menu } from 'lucide-react';
+import { Search, ChevronDown, User, Settings, LogOut, Menu, RotateCcw } from 'lucide-react';
 import { clearSession } from '../../../api/auth';
 import { useNavigate, useLocation } from 'react-router';
 
@@ -9,9 +9,11 @@ interface HeaderProps {
     isProfileOpen: boolean;
     setIsProfileOpen: (isOpen: boolean) => void;
     onMenuClick?: () => void;
+    onRefresh?: () => void;
+    isRefreshing?: boolean;
 }
 
-export function Header({ activePage, userEmail, userName, isProfileOpen, setIsProfileOpen, onMenuClick }: HeaderProps) {
+export function Header({ activePage, userEmail, userName, isProfileOpen, setIsProfileOpen, onMenuClick, onRefresh, isRefreshing }: HeaderProps) {
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -47,6 +49,17 @@ export function Header({ activePage, userEmail, userName, isProfileOpen, setIsPr
             </div>
 
             <div className="flex items-center gap-4 md:gap-6 shrink-0">
+                {onRefresh && (
+                    <button
+                        onClick={onRefresh}
+                        disabled={isRefreshing}
+                        title="Refresh queue"
+                        className="flex items-center gap-2 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+                    >
+                        <RotateCcw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                        <span className="hidden md:inline">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+                    </button>
+                )}
                 <div className="hidden sm:block relative w-[200px] md:w-[240px]">
                     <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input

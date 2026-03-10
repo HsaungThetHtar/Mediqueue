@@ -60,6 +60,7 @@ export function AdminDashboard() {
   const [filterDoctor, setFilterDoctor] = useState('all');
   const [departmentOptions, setDepartmentOptions] = useState<string[]>([]);
   const [prevDayStats, setPrevDayStats] = useState<PrevDayStats>({ total: 0, checkedIn: 0, waiting: 0, inProgress: 0, completed: 0 });
+  const [refreshing, setRefreshing] = useState(false);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -103,6 +104,13 @@ export function AdminDashboard() {
     } catch (err) {
       console.error("refresh error", err);
     }
+  };
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    await refresh();
+    setRefreshing(false);
   };
 
   useEffect(() => {
@@ -246,6 +254,8 @@ export function AdminDashboard() {
           isProfileOpen={isProfileOpen}
           setIsProfileOpen={setIsProfileOpen}
           onMenuClick={() => setIsSidebarOpen(true)}
+          onRefresh={handleRefresh}
+          isRefreshing={refreshing}
         />
         <main className="flex-1 p-0 overflow-x-hidden w-full relative">
           <Outlet context={contextValues} />

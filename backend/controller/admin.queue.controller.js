@@ -23,6 +23,27 @@ async function logQueueEvent({ bookingId, action, performedBy, performedByRole, 
   catch (err) { console.error("[QueueEvent] Failed to log:", err.message); }
 }
 
+async function notifyAlmostThere(io, doctorId, date, timeSlot, afterBooking) {
+  try {
+    const next = await Booking.findOne({
+      doctor: doctorId, date, timeSlot,
+      status: { $in: ["waiting", "checked-in"] },
+      createdAt: { $gt: afterBooking.createdAt },
+    }).sort({ createdAt: 1 });
+    if (!next) return;
+    const notif = await Notification.create({
+      userId: next.patientId,
+      title: "Almost Your Turn!",
+      message: `Queue ${next.queueNumber}: Only 1 more patient ahead of you. Please be ready and stay near the consultation room.`,
+      type: "status", relatedBookingId: next._id,
+    });
+    io.to("user:" + next.patientId).emit("notification", {
+      userId: String(next.patientId),
+      notification: { _id: notif._id, title: notif.title, message: notif.message, type: "status", relatedBookingId: next._id, isRead: false, createdAt: notif.createdAt, queueNumber: next.queueNumber, statusType: "almost-there" },
+    });
+  } catch (err) { console.error("[notifyAlmostThere] Failed:", err.message); }
+}
+
 exports.getQueueById = async function (req, res) {
   try {
     const booking = await populateDoctorAndDepartment(Booking.findById(req.params.id).populate("patientId", "fullName email phone dateOfBirth"));
@@ -61,12 +82,14 @@ exports.callQueue = async function (req, res) {
     );
     await Doctor.findByIdAndUpdate(booking.doctor._id, { currentQueueServing: queueNumberToServingInt(booking.queueNumber) });
     await logQueueEvent({ bookingId: booking._id, action: "CALL", performedBy: req.user && req.user.userId, performedByRole: req.user && req.user.role, queueNumber: booking.queueNumber });
-    const notifDoc = await Notification.create({ userId: booking.patientId, title: "Your Queue is Called!", message: "Please proceed to the consultation room immediately.", type: "status", relatedBookingId: booking._id });
+    const isInProgress = newStatus === "in-progress";
+    const notifDoc = await Notification.create({ userId: booking.patientId, title: isInProgress ? "Consultation Started" : "Your Queue is Called!", message: isInProgress ? "Your consultation is now in progress. Please stay with the doctor." : "Please proceed to the consultation room immediately.", type: "status", relatedBookingId: booking._id });
     const departmentName = (booking.department && booking.department.name) || "";
     const io = req.app.get("io");
     io.to("role:admin").to("role:doctor").emit("queue-update", { type: "called", booking: sanitizeBooking(booking) });
     io.to("user:" + booking.patientId).emit("booking-update", { bookingId: booking._id, status: newStatus });
-    io.to("user:" + booking.patientId).emit("notification", { userId: String(booking.patientId), notification: { _id: notifDoc._id, title: notifDoc.title, message: notifDoc.message, type: "status", relatedBookingId: booking._id, isRead: false, createdAt: notifDoc.createdAt, queueNumber: booking.queueNumber, doctorName: booking.doctorName, departmentName } });
+    io.to("user:" + booking.patientId).emit("notification", { userId: String(booking.patientId), notification: { _id: notifDoc._id, title: notifDoc.title, message: notifDoc.message, type: "status", relatedBookingId: booking._id, isRead: false, createdAt: notifDoc.createdAt, queueNumber: booking.queueNumber, doctorName: booking.doctorName, departmentName, statusType: newStatus } });
+    await notifyAlmostThere(io, booking.doctor._id, booking.date, booking.timeSlot, booking);
     res.json(booking);
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
@@ -97,13 +120,15 @@ exports.skipQueue = async function (req, res) {
     const io = req.app.get("io");
     io.to("role:admin").to("role:doctor").emit("queue-update", { type: "skipped", booking: sanitizeBooking(booking), nextBooking: sanitizeBooking(nextBooking) });
     io.to("user:" + booking.patientId).emit("booking-update", { bookingId: booking._id, status: "skipped" });
-    io.to("user:" + booking.patientId).emit("notification", { userId: String(booking.patientId), notification: { _id: notif._id, title: notif.title, message: notif.message, type: "status", relatedBookingId: booking._id, isRead: false, createdAt: notif.createdAt } });
+    io.to("user:" + booking.patientId).emit("notification", { userId: String(booking.patientId), notification: { _id: notif._id, title: notif.title, message: notif.message, type: "status", relatedBookingId: booking._id, isRead: false, createdAt: notif.createdAt, queueNumber: booking.queueNumber, statusType: "skipped" } });
     if (nextBooking) {
       const nextStatus = nextBooking.status;
-      const notifNext = await Notification.create({ userId: nextBooking.patientId, title: "Your Queue is Called!", message: "Please proceed to the consultation room immediately.", type: "status", relatedBookingId: nextBooking._id });
+      const nextIsInProgress = nextBooking.status === "in-progress";
+      const notifNext = await Notification.create({ userId: nextBooking.patientId, title: nextIsInProgress ? "Consultation Started" : "Your Queue is Called!", message: nextIsInProgress ? "Your consultation is now in progress. Please stay with the doctor." : "Please proceed to the consultation room immediately.", type: "status", relatedBookingId: nextBooking._id });
       io.to("role:admin").to("role:doctor").emit("queue-update", { type: "called", booking: sanitizeBooking(nextBooking) });
       io.to("user:" + nextBooking.patientId).emit("booking-update", { bookingId: nextBooking._id, status: nextStatus });
-      io.to("user:" + nextBooking.patientId).emit("notification", { userId: String(nextBooking.patientId), notification: { _id: notifNext._id, title: notifNext.title, message: notifNext.message, type: "status", relatedBookingId: nextBooking._id, isRead: false, createdAt: notifNext.createdAt, queueNumber: nextBooking.queueNumber, doctorName: nextBooking.doctorName } });
+      io.to("user:" + nextBooking.patientId).emit("notification", { userId: String(nextBooking.patientId), notification: { _id: notifNext._id, title: notifNext.title, message: notifNext.message, type: "status", relatedBookingId: nextBooking._id, isRead: false, createdAt: notifNext.createdAt, queueNumber: nextBooking.queueNumber, doctorName: nextBooking.doctorName, statusType: nextBooking.status } });
+      await notifyAlmostThere(io, booking.doctor._id, booking.date, booking.timeSlot, nextBooking);
     }
     res.json({ skippedQueue: booking, nextQueue: nextBooking || null });
   } catch (err) { res.status(500).json({ message: err.message }); }
@@ -135,10 +160,12 @@ exports.completeQueue = async function (req, res) {
     io.to("role:admin").to("role:doctor").emit("queue-update", { type: "completed", booking: sanitizeBooking(booking), nextBooking: sanitizeBooking(nextBooking) });
     if (nextBooking) {
       const nextStatus = nextBooking.status;
-      const notifDoc = await Notification.create({ userId: nextBooking.patientId, title: "Your Queue is Called!", message: "Please proceed to the consultation room immediately.", type: "status", relatedBookingId: nextBooking._id });
+      const nextIsInProgress2 = nextBooking.status === "in-progress";
+      const notifDoc = await Notification.create({ userId: nextBooking.patientId, title: nextIsInProgress2 ? "Consultation Started" : "Your Queue is Called!", message: nextIsInProgress2 ? "Your consultation is now in progress. Please stay with the doctor." : "Please proceed to the consultation room immediately.", type: "status", relatedBookingId: nextBooking._id });
       io.to("role:admin").to("role:doctor").emit("queue-update", { type: "called", booking: sanitizeBooking(nextBooking) });
       io.to("user:" + nextBooking.patientId).emit("booking-update", { bookingId: nextBooking._id, status: nextStatus });
-      io.to("user:" + nextBooking.patientId).emit("notification", { userId: String(nextBooking.patientId), notification: { _id: notifDoc._id, title: notifDoc.title, message: notifDoc.message, type: "status", relatedBookingId: nextBooking._id, isRead: false, createdAt: notifDoc.createdAt, queueNumber: nextBooking.queueNumber, doctorName: nextBooking.doctorName } });
+      io.to("user:" + nextBooking.patientId).emit("notification", { userId: String(nextBooking.patientId), notification: { _id: notifDoc._id, title: notifDoc.title, message: notifDoc.message, type: "status", relatedBookingId: nextBooking._id, isRead: false, createdAt: notifDoc.createdAt, queueNumber: nextBooking.queueNumber, doctorName: nextBooking.doctorName, statusType: nextBooking.status } });
+      await notifyAlmostThere(io, booking.doctor._id, booking.date, booking.timeSlot, nextBooking);
     }
     res.json({ completedQueue: booking, nextQueue: nextBooking || null });
   } catch (err) { res.status(500).json({ message: err.message }); }
@@ -188,10 +215,10 @@ exports.manualCheckIn = async function (req, res) {
     const checkIn = await CheckIn.create({ bookingId: booking._id, patientId: booking.patientId, method: "manual", notes, status: "confirmed" });
     await Booking.findByIdAndUpdate(bookingId, { status: "in-progress", calledAt: null, skippedAt: null });
     await logQueueEvent({ bookingId: booking._id, action: "CHECKIN", performedBy: req.user && req.user.userId, performedByRole: req.user && req.user.role, queueNumber: booking.queueNumber, notes: "staff QR check-in" });
-    const notifDoc = await Notification.create({ userId: booking.patientId, title: "Check-in Confirmed by Staff", message: "Staff has checked you in for your appointment with " + booking.doctorName + ".", type: "status", relatedBookingId: bookingId });
+    const notifDoc = await Notification.create({ userId: booking.patientId, title: "Consultation Started", message: "Staff has confirmed your check-in. Your consultation with " + booking.doctorName + " is now in progress.", type: "status", relatedBookingId: bookingId });
     const io = req.app.get("io");
     io.to("user:" + booking.patientId).to("role:admin").emit("checkin-update", { bookingId, status: "in-progress" });
-    io.to("user:" + booking.patientId).emit("notification", { userId: String(booking.patientId), notification: { _id: notifDoc._id, title: notifDoc.title, message: notifDoc.message, type: "status", relatedBookingId: bookingId, isRead: false, createdAt: notifDoc.createdAt } });
+    io.to("user:" + booking.patientId).emit("notification", { userId: String(booking.patientId), notification: { _id: notifDoc._id, title: notifDoc.title, message: notifDoc.message, type: "status", relatedBookingId: bookingId, isRead: false, createdAt: notifDoc.createdAt, queueNumber: booking.queueNumber, doctorName: booking.doctorName, statusType: "in-progress" } });
     res.status(201).json(checkIn);
   } catch (err) { res.status(500).json({ message: err.message }); }
 };

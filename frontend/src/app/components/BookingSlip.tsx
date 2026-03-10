@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Calendar, User, Clock, Activity, Home, X, QrCode, Bell, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Building2, Calendar, User, Clock, Activity, Home, X, QrCode, Bell, CheckCircle, AlertTriangle, Stethoscope } from 'lucide-react';
 import { io } from 'socket.io-client';
 import { BookingData } from '../MainApp';
 import { cancelBooking, getQueueStatus } from '../../api/bookings';
@@ -32,7 +32,7 @@ export function BookingSlip() {
   const onCancelBooking = handleCancelBooking;
   const onBackToHomeHandler = handleBackToHome;
   const [showCancelModal, setShowCancelModal] = useState(false);
-  const [showQueueCalledModal, setShowQueueCalledModal] = useState(false);
+  const [queueModalType, setQueueModalType] = useState<'called' | 'in-progress' | null>(null);
 
   // FIX #10: Track live booking status to hide cancel button after check-in
   const [liveStatus, setLiveStatus] = useState<string>((bookingData as any).status || 'waiting');
@@ -91,7 +91,7 @@ export function BookingSlip() {
   };
 
   const handleImOnMyWay = () => {
-    setShowQueueCalledModal(false);
+    setQueueModalType(null);
   };
 
   useEffect(() => {
@@ -109,7 +109,7 @@ export function BookingSlip() {
 
     socket.on('booking-update', (payload: { bookingId: string; status: string; booking?: any }) => {
       if (payload.bookingId === bookingId) {
-        if (payload.status === 'in-progress' || payload.status === 'called') setShowQueueCalledModal(true);
+        if (payload.status === 'in-progress' || payload.status === 'called') setQueueModalType(payload.status as 'called' | 'in-progress');
         if (payload.status) setLiveStatus(payload.status);
         // Only update currentServing for our own booking (H3 fix)
         const serving = payload.booking?.doctor?.currentQueueServing;
@@ -124,7 +124,7 @@ export function BookingSlip() {
       if (payload.type === 'called' && payload.booking) {
         const b = payload.booking;
         // If this is our booking being called
-        if (b._id === bookingId) setShowQueueCalledModal(true);
+        if (b._id === bookingId) setQueueModalType('called');
         // Update currently serving from queueNumber of the called booking
         const serving = b.doctor?.currentQueueServing ?? b.queueNumber;
         const display = toDisplayServing(serving);
@@ -383,8 +383,8 @@ export function BookingSlip() {
         </div>
       )}
 
-      {/* Your Queue is Called! Modal */}
-      {showQueueCalledModal && (
+      {/* Queue Called Modal — green */}
+      {queueModalType === 'called' && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden">
             <div className="bg-[#2E7D32] text-white p-6">
@@ -419,7 +419,54 @@ export function BookingSlip() {
                   I&apos;m on My Way
                 </button>
                 <button
-                  onClick={() => setShowQueueCalledModal(false)}
+                  onClick={() => setQueueModalType(null)}
+                  className="w-full py-4 rounded-xl font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 flex items-center justify-center"
+                >
+                  Close Notification
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Consultation Started Modal — blue */}
+      {queueModalType === 'in-progress' && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden">
+            <div className="bg-blue-700 text-white p-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                  <Stethoscope className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold">Consultation Started</h2>
+                  <p className="text-white/90 text-sm mt-0.5">Your turn is now in progress</p>
+                </div>
+              </div>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 text-center">
+                <p className="text-sm text-blue-800 mb-1">Your Queue Number</p>
+                <p className="text-4xl font-bold text-blue-700">{bookingData.queueNumber}</p>
+                <p className="text-sm text-blue-600 mt-1">is now in consultation</p>
+              </div>
+              <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                <Stethoscope className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-blue-900">
+                  <span className="font-semibold">In Session:</span> Your consultation is now in progress. Please stay in the consultation room with your doctor.
+                </p>
+              </div>
+              <div className="flex flex-col gap-3 pt-2">
+                <button
+                  onClick={handleImOnMyWay}
+                  className="w-full py-4 rounded-xl font-semibold text-white bg-blue-600 hover:bg-blue-700 flex items-center justify-center gap-2"
+                >
+                  <CheckCircle className="w-5 h-5" />
+                  Got It
+                </button>
+                <button
+                  onClick={() => setQueueModalType(null)}
                   className="w-full py-4 rounded-xl font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 flex items-center justify-center"
                 >
                   Close Notification

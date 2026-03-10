@@ -1,6 +1,7 @@
 const Booking = require("../models/Booking");
 const Doctor = require("../models/Doctor");
 const SiteConfig = require("../models/SiteConfig");
+const Notification = require("../models/Notification");
 const { calculateETA } = require("../utils/eta");
 
 // C2 FIX: Generate queue number from the last existing number (safer than countDocuments)
@@ -310,6 +311,21 @@ exports.cancelBooking = async function (req, res) {
     );
     const io = req.app.get("io");
     if (io && updatedCancelDoctor) io.emit("doctor-update", updatedCancelDoctor.toObject());
+
+    // Notify patient if admin cancelled their booking
+    if (req.user.role === "admin" && booking.patientId && io) {
+      const notifDoc = await Notification.create({
+        userId: booking.patientId,
+        title: "Queue Booking Cancelled",
+        message: `Your queue ${booking.queueNumber} has been cancelled by hospital staff. Please contact the front desk for more information.`,
+        type: "status",
+        relatedBookingId: booking._id,
+      });
+      io.to("user:" + booking.patientId).emit("notification", {
+        userId: String(booking.patientId),
+        notification: { _id: notifDoc._id, title: notifDoc.title, message: notifDoc.message, type: "status", relatedBookingId: booking._id, isRead: false, createdAt: notifDoc.createdAt, queueNumber: booking.queueNumber, statusType: "canceled" },
+      });
+    }
 
     res.json(booking);
   } catch (err) {

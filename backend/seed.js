@@ -104,7 +104,7 @@ async function seed() {
 
     await mongoose.connection.db.dropCollection("departments").catch(() => {});
     await mongoose.connection.db.dropCollection("doctors").catch(() => {});
-    await mongoose.connection.db.dropCollection("users").catch(() => {});
+    await User.deleteMany({ role: { $in: ["admin", "doctor"] } });
     await mongoose.connection.db.dropCollection("bookings").catch(() => {});
     await mongoose.connection.db.dropCollection("notifications").catch(() => {});
     await mongoose.connection.db.dropCollection("checkins").catch(() => {});
@@ -142,16 +142,13 @@ async function seed() {
     }
     for (const u of patientUsers) {
       const hashed = await bcrypt.hash(u.password, 10);
-      const user = await User.create({
-        fullName: u.fullName,
-        email: u.email,
-        password: hashed,
-        phone: u.phone,
-        dateOfBirth: u.dateOfBirth,
-        gender: u.gender,
-        identificationNumber: u.identificationNumber,
-        role: "patient",
-      });
+      const user = await User.findOneAndUpdate(
+        { email: u.email },
+        { $set: { fullName: u.fullName, password: hashed, phone: u.phone,
+          dateOfBirth: u.dateOfBirth, gender: u.gender,
+          identificationNumber: u.identificationNumber, role: "patient" } },
+        { upsert: true, returnDocument: "after" }
+      );
       insertedUsers.push(user);
     }
     console.log(`Inserted ${insertedUsers.length} users.`);

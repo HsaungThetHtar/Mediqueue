@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { Clock, CheckCircle, User, FileText, Phone, LogOut, Calendar } from 'lucide-react';
+import { Clock, CheckCircle, User, FileText, Phone, LogOut, Calendar, RotateCcw } from 'lucide-react';
 import { clearSession, getSession } from '../../api/auth';
 import { getDoctorsByUserId, getMyQueues, updatePatientStatus, saveBookingNotes } from '../../api/doctors';
 import { getDepartmentName } from '../../utils/department';
@@ -57,6 +57,7 @@ export function DoctorInterface() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [doctorId, setDoctorId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -253,6 +254,20 @@ export function DoctorInterface() {
                 <Calendar className="w-4 h-4 text-gray-500" />
                 {displayDate}
               </span>
+              <button
+                onClick={async () => {
+                  if (refreshing) return;
+                  setRefreshing(true);
+                  await refreshPatients();
+                  setRefreshing(false);
+                }}
+                disabled={refreshing}
+                title="Refresh queue"
+                className="flex items-center gap-2 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-medium transition-colors disabled:opacity-60"
+              >
+                <RotateCcw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                <span className="hidden md:inline">{refreshing ? 'Refreshing...' : 'Refresh'}</span>
+              </button>
               <button
                 onClick={() => { clearSession(); navigate('/signin'); }}
                 className="flex items-center gap-2 text-red-600 hover:text-red-700 px-4 py-2 rounded-lg hover:bg-red-50 transition-colors font-medium border border-red-200"
